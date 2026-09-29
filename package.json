@@ -1,0 +1,12 @@
+{
+  "name": "kikos-quest",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A classic-style 2D platformer in plain JavaScript and the HTML5 canvas.",
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.1"
+  }
+}
