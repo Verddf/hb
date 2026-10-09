@@ -1,0 +1,34 @@
+// Checks the live sound path: starts on the first key press, follows the screens, sleeps when the window loses focus.
+const path = require('path');
+const { chromium } = require('playwright');
+const PAGE = require('url').pathToFileURL(path.join(__dirname, '../index.html')).href;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+(async () => {
+  const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
+  const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
+  let errors = 0;
+  page.on('pageerror', e => { console.log('PAGE ERROR:', e.message); errors++; });
+  await page.goto(PAGE);
+  await sleep(400);
+  const au = () => page.evaluate(() => { const A = window.__tobi.AU; return { ctx: !!A.ctx, state: A.ctx && A.ctx.state, cur: A.cur, want: A.want, pos: A.pos, musicOn: A.musicOn, sfxOn: A.sfxOn, mus: A.mus && +A.mus.gain.value.toFixed(2), sfx: A.sfx && +A.sfx.gain.value.toFixed(2) }; });
+  const a0 = await au(); console.log('before any input', JSON.stringify(a0));
+  await page.keyboard.press('KeyX'); await sleep(500);
+  const a1 = await au(); console.log('after a key     ', JSON.stringify(a1));
+  await page.keyboard.press('Enter'); await sleep(300); await page.keyboard.press('Enter'); await sleep(600); await page.keyboard.press('Enter'); await sleep(900);
+  const a2 = await au(); console.log('in stage 1      ', JSON.stringify(a2), await page.evaluate(() => window.__tobi.G.mode));
+  await page.click('#bMusic'); await sleep(100);
+  const a3 = await au(); console.log('music off       ', JSON.stringify({ mus: a3.mus, musicOn: a3.musicOn }));
+  await page.click('#bMusic'); await page.click('#bSound'); await sleep(100);
+  const a4 = await au(); console.log('sound off       ', JSON.stringify({ mus: a4.mus, sfx: a4.sfx }));
+  await page.click('#bSound');
+  await page.evaluate(() => window.dispatchEvent(new Event('blur'))); await sleep(300);
+  const a5 = await au(); console.log('window blurred  ', JSON.stringify({ state: a5.state }), 'paused:', await page.evaluate(() => window.__tobi.G.paused));
+  await page.evaluate(() => window.dispatchEvent(new Event('focus'))); await sleep(300);
+  const a6 = await au(); console.log('focused again   ', JSON.stringify({ state: a6.state }));
+  await page.keyboard.press('Enter'); await sleep(200);
+  const p2 = await page.evaluate(() => window.__tobi.G.paused);
+  const ok = !a0.ctx && a1.ctx && a1.state === 'running' && a1.cur === 'title' && a2.cur === 'meadow' && a2.pos > 0 && a3.mus === 0 && a4.sfx === 0 && a4.mus > 0 && a5.state === 'suspended' && a6.state === 'running' && !p2 && !errors;
+  console.log(ok ? 'SOUND OK' : 'SOUND FAILED');
+  await browser.close();
+  process.exit(ok ? 0 : 1);
+})();

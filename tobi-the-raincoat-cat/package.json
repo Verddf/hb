@@ -1,0 +1,15 @@
+{
+  "name": "tobi-the-raincoat-cat",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A side-scrolling platform game in a single HTML file: plain JavaScript on a canvas, no libraries, no image or sound files.",
+  "scripts": {
+    "build": "node build.js",
+    "test": "node test/rules.js && node test/levels.js && node test/songs.js && node test/fuzz.js",
+    "test:proofs": "node test/prove.js",
+    "test:browser": "node test/e2e.js && node test/touch.js && node test/touch.js land && node test/lives.js && node test/sound.js && node test/layout.js && node test/pacing.js && node test/audio.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.0"
+  }
+}

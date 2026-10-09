@@ -1,0 +1,165 @@
+<title>Tobi the Raincoat Cat</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=M+PLUS+Rounded+1c:wght@400;700&display=swap">
+<style>
+/* Layout: a handheld console's screen on top, its paper manual unfolded underneath. */
+:root {
+  --paper: #e7eef5;       /* rain-washed page */
+  --ink: #1b1b2f;
+  --soft: #535e7b;
+  --rule: #c2cfdc;
+  --coat: #ffcf3f;        /* raincoat yellow: the one accent */
+  --brolly: #e8414f;      /* umbrella red: the run button only */
+  --shell: #20223d;       /* the console body */
+  --shell-hi: #3a3e68;
+  --key: #ffffff;
+  --key-ink: #1b1b2f;
+  --screen: #0b0b16;      /* behind the game picture */
+  --on-shell: #ffffff;    /* marks on the console's dark buttons */
+  --on-coat: #1b1b2f;     /* text on raincoat yellow */
+  --on-brolly: #ffffff;   /* text on umbrella red */
+  --display: "Pixelify Sans", ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  --body: "M PLUS Rounded 1c", ui-rounded, "Hiragino Maru Gothic ProN", "Nunito", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #11132a; --ink: #eef1f9; --soft: #a4acc8; --rule: #2d3258;
+    --shell: #070812; --shell-hi: #2a2e55; --key: #262a50; --key-ink: #eef1f9;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #11132a; --ink: #eef1f9; --soft: #a4acc8; --rule: #2d3258;
+  --shell: #070812; --shell-hi: #2a2e55; --key: #262a50; --key-ink: #eef1f9;
+  color-scheme: dark;
+}
+
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+[hidden] { display: none !important; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-inline: 16px; padding-block: 12px 44px; display: flex; flex-direction: column; gap: 12px; }
+
+.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.mark { display: flex; align-items: center; gap: 10px; margin: 0; font-family: var(--display); font-weight: 700; font-size: 26px; line-height: 1; letter-spacing: 0.01em; }
+.mark canvas { image-rendering: pixelated; flex: none; }
+.mark small { font-weight: 500; font-size: 15px; color: var(--soft); }
+.tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.tools button {
+  font: 500 14px/1 var(--display); color: var(--key-ink); background: var(--key);
+  border: 2px solid var(--ink); border-bottom-width: 4px; border-radius: 8px; padding: 6px 10px 5px;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+}
+.tools button:active { border-bottom-width: 2px; transform: translateY(2px); }
+.tools button[aria-pressed]::before { content: ""; width: 8px; height: 8px; border: 2px solid var(--key-ink); background: transparent; }
+.tools button[aria-pressed="true"]::before { background: var(--coat); }
+button:focus-visible, canvas:focus-visible { outline: 3px solid var(--coat); outline-offset: 2px; }
+
+.stage {
+  position: relative; background: var(--shell); border-radius: 18px; padding: 12px;
+  width: fit-content; max-width: 100%; margin-inline: auto; box-sizing: border-box;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  box-shadow: inset 0 2px 0 var(--shell-hi), 0 14px 26px -18px rgba(0, 0, 0, 0.6);
+}
+#game { display: block; max-width: 100%; image-rendering: pixelated; background: var(--screen); border-radius: 4px; touch-action: none; outline-offset: 3px; }
+.stage:fullscreen { border-radius: 0; padding: 4px; justify-content: center; background: var(--screen); width: 100%; height: 100%; max-width: none; }
+
+.pad { width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; padding: 4px 6px 2px;
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.dpad { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 150px; height: 70px; }
+.dpad span { display: grid; place-items: center; background: var(--shell-hi); color: var(--on-shell); border-radius: 14px; font: 700 24px/1 var(--display); }
+.dpad[data-on="l"] .dl, .dpad[data-on="r"] .dr { background: var(--coat); color: var(--on-coat); }
+.ab { position: relative; width: 152px; height: 82px; }
+.ab span { position: absolute; width: 70px; height: 70px; border-radius: 50%; display: grid; place-items: center; font: 700 14px/1 var(--display); letter-spacing: 0.04em; }
+.ab .bb { left: 0; bottom: 0; background: var(--brolly); color: var(--on-brolly); }
+.ab .ba { right: 0; top: 0; background: var(--coat); color: var(--on-coat); }
+.ab[data-on*="b"] .bb, .ab[data-on*="a"] .ba { transform: scale(0.92); filter: brightness(1.15); }
+.stage.overlay .pad { position: absolute; left: 0; right: 0; bottom: 10px; padding-inline: 18px; opacity: 0.62; pointer-events: none; }
+.stage.overlay .pad > * { pointer-events: auto; }
+
+.manual { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 8px 40px; padding-top: 14px; border-top: 2px solid var(--rule); }
+.manual section { min-width: 0; }
+.manual h2 { font: 700 13px/1.2 var(--display); letter-spacing: 0.14em; text-transform: uppercase; color: var(--soft); margin: 10px 0 10px; text-wrap: balance; }
+.manual p { margin: 0 0 10px; max-width: 62ch; }
+.keys { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 7px 14px; margin: 0 0 12px; align-items: baseline; }
+.keys dt { white-space: nowrap; }
+.keys dd { margin: 0; }
+kbd { font: 500 13px/1 var(--display); color: var(--key-ink); background: var(--key); border: 1.5px solid var(--ink); border-bottom-width: 3px; border-radius: 6px; padding: 2px 6px 1px; }
+.guide { list-style: none; margin: 0 0 12px; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 24px; }
+.guide li { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 12px; align-items: center; }
+.guide canvas { image-rendering: pixelated; justify-self: center; }
+.guide b { font-family: var(--display); font-weight: 700; font-size: 15px; }
+.guide span { display: block; color: var(--soft); font-size: 14px; line-height: 1.35; }
+.stages { margin: 0; padding-left: 1.4em; }
+.stages li { margin-bottom: 4px; }
+.stages b { font-family: var(--display); font-weight: 700; }
+.note { color: var(--soft); font-size: 13px; }
+@media (max-width: 760px) {
+  .manual { grid-template-columns: minmax(0, 1fr); }
+  .mark { font-size: 22px; }
+  .mark small { font-size: 13px; }
+  .stage { padding: 8px; border-radius: 14px; }
+}
+@media (max-width: 460px) {
+  .guide { grid-template-columns: minmax(0, 1fr); }
+  .tools { gap: 5px; }
+  .tools button { font-size: 13px; padding: 5px 7px 4px; gap: 5px; }
+}
+@media (prefers-reduced-motion: reduce) { .tools button:active { transform: none; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1 class="mark"><canvas data-s="tobi_idle" width="16" height="16" aria-hidden="true"></canvas><span>Tobi <small>the Raincoat Cat</small></span></h1>
+    <div class="tools">
+      <button type="button" id="bPause" aria-pressed="false">Pause</button>
+      <button type="button" id="bMusic" aria-pressed="true">Music</button>
+      <button type="button" id="bSound" aria-pressed="true">Sound</button>
+      <button type="button" id="bFull">Full screen</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="stage" id="stage">
+      <canvas id="game" width="800" height="480" tabindex="0" role="img" aria-label="Tobi the Raincoat Cat, a side-scrolling platform game. Click here, then use the keyboard to play."></canvas>
+      <div class="pad" id="pad" hidden>
+        <div class="dpad" id="dpad" aria-label="Move left or right"><span class="dl">&lt;</span><span class="dr">&gt;</span></div>
+        <div class="ab" id="ab" aria-label="B runs, A jumps"><span class="bb">B RUN</span><span class="ba">A JUMP</span></div>
+      </div>
+    </div>
+  </main>
+
+  <div class="manual">
+    <section>
+      <h2>How to play</h2>
+      <p>The storm scattered the sun. Run and jump through four stages and ring the bell at the end of each one. Reach the bell higher up its post for a bigger bonus. If you fall, you start again from the last lamp you passed.</p>
+      <dl class="keys">
+        <dt><kbd>&larr;</kbd> <kbd>&rarr;</kbd></dt><dd>Move. <kbd>A</kbd> and <kbd>D</kbd> work too.</dd>
+        <dt><kbd>Space</kbd></dt><dd>Jump. Hold it longer to jump higher. <kbd>Z</kbd> or <kbd>&uarr;</kbd> also jump.</dd>
+        <dt><kbd>Shift</kbd></dt><dd>Run while you hold it, for longer jumps. <kbd>X</kbd> also runs. Every stage can be finished without running.</dd>
+        <dt><kbd>P</kbd></dt><dd>Pause. <kbd>M</kbd> turns the music on or off.</dd>
+      </dl>
+      <p>With the umbrella, hold jump in the air to glide. On a phone the buttons appear under the screen: slide your thumb onto both to run and jump together. A gamepad works as well.</p>
+      <h2>Four stages</h2>
+      <ol class="stages">
+        <li><b>Drizzle Meadow</b>: stumps, ponds and your first snail.</li>
+        <li><b>Snail Hollow</b>: lifts over a deep pit and a floor of crystal spikes.</li>
+        <li><b>Nimbus Heights</b>: springs, falling rafts and a rainbow bridge.</li>
+        <li><b>Thunder Keep</b>: lava, turning ember chains and stone crushers.</li>
+      </ol>
+    </section>
+    <section>
+      <h2>Field guide</h2>
+      <ul class="guide">
+        <li><canvas data-s="mud1" width="16" height="16" aria-hidden="true"></canvas><div><b>Grumble</b><span>A sulky raindrop. Land on it.</span></div></li>
+        <li><canvas data-s="snail1" width="16" height="16" aria-hidden="true"></canvas><div><b>Snail</b><span>Land on it, then kick the shell. Mind the rebound.</span></div></li>
+        <li><canvas data-s="prick1" width="16" height="13" aria-hidden="true"></canvas><div><b>Prickle</b><span>Spikes on top. Jump over it, or send a shell.</span></div></li>
+        <li><canvas data-s="storm1" width="16" height="11" aria-hidden="true"></canvas><div><b>Flit</b><span>Drifts in the air. Bounce off it to go higher.</span></div></li>
+        <li><canvas data-s="frog1" width="16" height="11" aria-hidden="true"></canvas><div><b>Hopper</b><span>Leaps at you. Stomp it between hops.</span></div></li>
+        <li><canvas data-s="block" width="16" height="16" aria-hidden="true"></canvas><div><b>Sun block</b><span>Hit it from below for coins and items.</span></div></li>
+        <li><canvas data-s="item_umb" width="14" height="14" aria-hidden="true"></canvas><div><b>Umbrella</b><span>Glide, smash crates, and take one hit safely.</span></div></li>
+        <li><canvas data-s="sun1" width="12" height="12" aria-hidden="true"></canvas><div><b>Sun drop</b><span>For ten seconds nothing can hurt you.</span></div></li>
+        <li><canvas data-s="gem" width="10" height="12" aria-hidden="true"></canvas><div><b>Sun shard</b><span>Three are hidden in every stage.</span></div></li>
+        <li><canvas data-s="coin0" width="10" height="11" aria-hidden="true"></canvas><div><b>Coin</b><span>One hundred of them earn an extra try.</span></div></li>
+      </ul>
+      <p class="note">You get three tries per game. Stages you have reached, your best score and your sound settings are remembered in this browser only.</p>
+    </section>
+  </div>
+</div>
