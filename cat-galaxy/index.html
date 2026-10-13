@@ -1,0 +1,3033 @@
+<!doctype html>
+<!--
+  ==========================================================================
+  CAT GALAXY
+  A one-button space game in a single HTML file: HTML, CSS and plain
+  JavaScript, with no libraries and no image or sound files. The pictures
+  are drawn by the code and the sounds are made by the code as you play.
+  ==========================================================================
+
+  HOW TO PLAY
+    Mochi the space cat walks around spinning planets. Leap at the right
+    moment and Mochi flies straight out, away from the planet's centre,
+    towards the next planet. A dotted line shows where Mochi will go.
+
+    Controls   Leap ................ Space, Up arrow, W, click or tap anywhere
+               Pause ............... P or Esc (or the pause button)
+               Restart the level ... R
+               Sound on or off ..... M (or the sound button)
+
+    Goal       Catch every golden fish in the level. That opens the
+               wormhole. Fly into it to finish the level.
+
+    Lives      You have 9 (Mochi is a cat). You lose one if Mochi drifts
+               past the dotted edge of space, touches a moon rock or a
+               space dog, lands on a sun, or falls into a black hole. Mochi
+               comes back on the last planet Mochi stood on, and fish you
+               already caught stay caught. Lose all nine and you can try
+               the level again.
+
+    Stars      Each level gives up to three stars: one for finishing, one
+               for losing no lives, one for beating the par time.
+
+    Levels     Eight levels. Each one adds something new: yarn, fast
+               planets, moon rocks, drifting planets, a black hole, space
+               dogs and suns, then everything at once.
+
+  WHERE THINGS ARE IN THIS FILE
+    <style>               1-9: design tokens, layout, HUD, menu screens,
+                          buttons and the rules for small and large screens
+    <main id="stage">     the game area: the <canvas> the game is drawn on,
+                          the HUD on top of it and the menu screens
+    <script id="core">    THE RULES: tuning numbers, the eight levels,
+                          movement, collisions and scoring. It never touches
+                          the page, so the checks in test/ can run it in Node.
+    <script id="app">     EVERYTHING YOU SEE AND HEAR: saving, sound, drawing,
+                          screens, keyboard/mouse/touch input, the main loop
+
+  ADDING OR CHANGING A LEVEL
+    Edit LEVELS in <script id="core">. Positions are in a galaxy 1200 units
+    wide and 800 high (x to the right, y down). On tall screens the galaxy
+    is turned on its side, so every level fits phones held upright too.
+    Then run `node test/levels.js` (needs Node.js 18+) to prove the level
+    can still be finished without losing a life.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cat Galaxy</title>
+<meta name="description" content="Help Mochi the space cat hop between spinning planets, catch golden fish and fly home through the wormholes.">
+<meta name="theme-color" content="#0d0b26">
+<!-- Two typefaces from Google Fonts. Without a connection the game uses the fallbacks below. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mochiy+Pop+One&family=Zen+Maru+Gothic:wght@500;700;900&display=swap">
+<style>
+/* ==========================================================================
+   1. DESIGN TOKENS
+   Layout: a full-bleed window onto space. The HUD floats along the top edge
+   and the menus are cards over the live galaxy. The game keeps one dark
+   look on purpose (it is space), so every colour is set here.
+   ========================================================================== */
+:root {
+  color-scheme: dark;
+
+  --space: #0d0b26;            /* the night sky behind everything */
+  --space-deep: #08061a;
+  --panel: rgba(25, 20, 60, 0.92);
+  --chip: rgba(255, 244, 230, 0.08);
+  --chip-strong: rgba(255, 244, 230, 0.15);
+  --line: rgba(255, 236, 214, 0.16);
+  --line-strong: rgba(255, 236, 214, 0.36);
+  --scrim: rgba(8, 6, 26, 0.6);
+
+  --milk: #fff4e6;             /* main text: warm white, like milk */
+  --muted: #bdb3e0;            /* secondary text: starlight lilac */
+  --tangerine: #ffa646;        /* Mochi's fur, the one accent */
+  --tangerine-deep: #d9712a;
+  --on-tangerine: #2b1407;
+  --sakura: #ff8fc7;           /* focus rings and yarn */
+  --mint: #7ef0c1;             /* good news: the wormhole is open */
+  --danger: #ff7d8a;           /* a life lost */
+  --star-off: rgba(255, 244, 230, 0.22);
+
+  --font-display: "Mochiy Pop One", "Hiragino Maru Gothic ProN", "Arial Rounded MT Bold", "Trebuchet MS", sans-serif;
+  --font-body: "Zen Maru Gothic", "Hiragino Maru Gothic ProN", ui-rounded, "Segoe UI", system-ui, sans-serif;
+
+  --radius: 20px;
+  --pad-top: env(safe-area-inset-top, 0px);
+  --pad-bottom: env(safe-area-inset-bottom, 0px);
+  --pad-left: max(16px, env(safe-area-inset-left, 0px));
+  --pad-right: max(16px, env(safe-area-inset-right, 0px));
+}
+
+/* ==========================================================================
+   2. PAGE AND STAGE
+   The stage fills the whole window and never scrolls; the canvas fills it.
+   ========================================================================== */
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--space);
+  color: var(--milk);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+#stage {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--space);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+#game {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;          /* taps are leaps, never zooms or scrolls */
+  cursor: pointer;
+}
+h1, h2, h3, p { margin: 0; }
+h1, h2, h3 { text-wrap: balance; }
+kbd {
+  display: inline-block;
+  min-width: 1.9em;
+  padding: 1px 7px;
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 3px;
+  border-radius: 7px;
+  background: var(--chip);
+  color: var(--milk);
+  font: 700 0.85em/1.5 var(--font-body);
+  text-align: center;
+}
+
+/* ==========================================================================
+   3. HUD (level, fish, lives, score, time, buttons)
+   Taps on the HUD fall through to the game, except on its two buttons.
+   ========================================================================== */
+.hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px 16px;
+  padding: calc(10px + var(--pad-top)) var(--pad-right) 12px var(--pad-left);
+  background: linear-gradient(to bottom, rgba(13, 11, 38, 0.9), rgba(13, 11, 38, 0.55) 70%, rgba(13, 11, 38, 0));
+  pointer-events: none;
+  touch-action: none;
+  transition: opacity 0.3s ease, visibility 0.3s;
+}
+.hud.is-off { opacity: 0; visibility: hidden; }
+.hud-level {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.hud-level .num {
+  font-family: var(--font-display);
+  font-size: 15px;
+  color: var(--tangerine);
+}
+.hud-level .name {
+  font-weight: 900;
+  font-size: 17px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hud-stats {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--chip);
+  font-weight: 900;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.stat .label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.stat canvas { display: block; }
+.stat .mini { display: none; }
+.stat.bump { animation: bump 0.35s ease; }
+.stat.hurt { animation: hurt 0.5s ease; }
+@keyframes bump { 40% { transform: scale(1.15); border-color: var(--tangerine); } }
+@keyframes hurt { 30% { transform: translateX(-3px); border-color: var(--danger); } 60% { transform: translateX(3px); } }
+.hud-buttons { display: flex; gap: 8px; }
+.icon-btn {
+  pointer-events: auto;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--chip);
+  color: var(--milk);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background 0.2s, border-color 0.2s;
+}
+.icon-btn:hover { background: var(--chip-strong); border-color: var(--line-strong); }
+.icon-btn svg { width: 20px; height: 20px; fill: currentColor; }
+.icon-btn[aria-pressed="false"] { color: var(--muted); }
+.icon-btn .when-off { display: none; }
+.icon-btn[aria-pressed="false"] .when-on { display: none; }
+.icon-btn[aria-pressed="false"] .when-off { display: block; }
+
+/* ==========================================================================
+   4. TOAST (short messages over the game: "Wormhole open!")
+   ========================================================================== */
+.toast {
+  position: absolute;
+  left: 50%;
+  top: 24%;
+  z-index: 3;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  transform: translateX(-50%);
+  font-family: var(--font-display);
+  font-size: clamp(19px, 3.4vw, 32px);
+  line-height: 1.2;
+  text-align: center;
+  color: var(--milk);
+  text-shadow: 0 3px 0 rgba(8, 6, 26, 0.6), 0 0 22px rgba(255, 166, 70, 0.45);
+  pointer-events: none;
+  opacity: 0;
+}
+.toast small {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 0.55em;
+  color: var(--muted);
+  text-shadow: 0 2px 0 rgba(8, 6, 26, 0.6);
+}
+.toast.good { color: var(--mint); }
+.toast.bad { color: var(--danger); }
+.toast.show { animation: toast 2s ease both; }
+@keyframes toast {
+  0% { opacity: 0; transform: translate(-50%, 12px) scale(0.92); }
+  10% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  80% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, -10px); }
+}
+
+/* ==========================================================================
+   5. SCREENS (title, levels, help, intro, pause, results)
+   Each screen covers the stage and scrolls on its own if it is too tall.
+   ========================================================================== */
+.screen {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: calc(16px + var(--pad-top)) var(--pad-right) calc(16px + var(--pad-bottom)) var(--pad-left);
+  background: var(--scrim);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  touch-action: pan-y;
+  animation: screen-in 0.28s ease both;
+}
+@keyframes screen-in { from { opacity: 0; } }
+.panel {
+  margin: auto;                 /* centred while it fits, scrollable when it does not */
+  width: min(100%, 520px);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: clamp(20px, 4vw, 34px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+  animation: panel-in 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+@keyframes panel-in { from { opacity: 0; transform: translateY(14px) scale(0.97); } }
+.panel-wide { width: min(100%, 780px); }
+.panel-narrow { width: min(100%, 400px); }
+.eyebrow {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tangerine);
+}
+.display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(28px, 5vw, 40px);
+  line-height: 1.1;
+}
+.panel h2 + p, .panel .eyebrow + .display { margin-top: -8px; }
+.muted { color: var(--muted); }
+.panel p { max-width: 62ch; }
+
+/* ==========================================================================
+   6. BUTTONS
+   ========================================================================== */
+.actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.actions.stack { flex-direction: column; }
+.btn {
+  min-height: 48px;
+  padding: 12px 24px;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  background: var(--chip);
+  color: var(--milk);
+  font: 700 17px/1.2 var(--font-body);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 0.12s ease, background 0.2s, border-color 0.2s;
+}
+.btn:hover { background: var(--chip-strong); border-color: var(--line-strong); }
+.btn:active { transform: translateY(2px); }
+.btn-primary {
+  border-color: transparent;
+  background: var(--tangerine);
+  color: var(--on-tangerine);
+  font-weight: 900;
+  box-shadow: 0 5px 0 var(--tangerine-deep), 0 12px 30px rgba(255, 166, 70, 0.3);
+}
+.btn-primary:hover { background: #ffb767; border-color: transparent; }
+.btn-primary:active { box-shadow: 0 2px 0 var(--tangerine-deep); transform: translateY(3px); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+:focus-visible { outline: 3px solid var(--sakura); outline-offset: 3px; }
+
+/* ==========================================================================
+   7. TITLE SCREEN
+   The title sits on the left over the live galaxy, where Mochi hops on
+   its own. Two cat ears sit on top of the word "Cat".
+   ========================================================================== */
+.screen-title {
+  background: linear-gradient(90deg, rgba(8, 6, 26, 0.92) 0%, rgba(8, 6, 26, 0.7) 40%, rgba(8, 6, 26, 0) 78%);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.title-card {
+  margin: auto auto auto clamp(0px, 5vw, 72px);
+  width: min(100%, 520px);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.logo {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(54px, 10vw, 112px);
+  line-height: 0.98;
+  letter-spacing: -0.01em;
+  padding-top: 0.2em;          /* room for the ears */
+}
+.logo .ears { position: relative; display: inline-block; }
+.logo .ears::before,
+.logo .ears::after {
+  content: "";
+  position: absolute;
+  top: -0.1em;
+  width: 0.3em;
+  height: 0.34em;
+  background: var(--milk);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+.logo .ears::before { left: 0.05em; transform: rotate(-22deg); }
+.logo .ears::after { left: 0.47em; transform: rotate(22deg); }
+.logo .galaxy { display: block; color: var(--tangerine); }
+.lede { font-size: clamp(17px, 1.6vw, 19px); color: var(--milk); max-width: 46ch; }
+.title-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================================================
+   8. LEVEL SELECT, HELP, INTRO AND RESULTS
+   ========================================================================== */
+.panel-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+.level-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+.level-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-height: 112px;
+  padding: 14px 16px;
+  border: 1.5px solid var(--line);
+  border-radius: 16px;
+  background: var(--chip);
+  color: var(--milk);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: border-color 0.2s, background 0.2s, transform 0.12s;
+}
+.level-card:hover:not(:disabled) { border-color: var(--tangerine); background: var(--chip-strong); }
+.level-card:active:not(:disabled) { transform: translateY(2px); }
+.level-card:disabled { opacity: 0.5; cursor: not-allowed; }
+.level-card .num { font-family: var(--font-display); font-size: 26px; line-height: 1; color: var(--tangerine); }
+.level-card .name { font-weight: 900; line-height: 1.25; }
+.level-card .stars { margin-top: auto; }
+.level-card .locked { margin-top: auto; font-size: 13px; font-weight: 700; color: var(--muted); }
+.stars { display: inline-flex; gap: 2px; font-size: 17px; letter-spacing: 0; }
+.stars .on { color: var(--tangerine); }
+.stars .off { color: var(--star-off); }
+
+.help h3 { font-size: 18px; font-weight: 900; color: var(--tangerine); margin-bottom: 4px; }
+.help-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 28px; }
+.help-grid section { min-width: 0; }
+.keys {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 14px;
+  align-items: center;
+  margin: 6px 0 0;
+}
+.keys dt { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.keys dd { margin: 0; color: var(--muted); }
+.legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px 18px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.legend li { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.legend canvas { flex: none; display: block; }
+.legend b { display: block; line-height: 1.2; }
+.legend span { display: block; font-size: 14px; line-height: 1.35; color: var(--muted); }
+
+.intro-new {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--chip);
+  border: 1px dashed var(--line-strong);
+}
+.intro-new canvas { flex: none; display: block; }
+.intro-new p { min-width: 0; }
+.intro-new b { color: var(--tangerine); }
+.facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+.facts div {
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--chip);
+  min-width: 0;
+}
+.facts dt { font-size: 11px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.facts dd { margin: 2px 0 0; font-size: 20px; font-weight: 900; font-variant-numeric: tabular-nums; }
+
+.stars-big { display: flex; justify-content: center; gap: 12px; font-size: clamp(48px, 9vw, 64px); line-height: 1; }
+.stars-big span { color: var(--star-off); }
+.stars-big span.on { color: var(--tangerine); text-shadow: 0 0 24px rgba(255, 166, 70, 0.55); animation: star-pop 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.5) both; }
+.stars-big span.on:nth-child(2) { animation-delay: 0.18s; }
+.stars-big span.on:nth-child(3) { animation-delay: 0.36s; }
+@keyframes star-pop { from { opacity: 0; transform: scale(0.2) rotate(-40deg); } }
+.star-notes { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 16px; margin: -6px 0 0; padding: 0; list-style: none; font-size: 14px; font-weight: 700; }
+.star-notes li { color: var(--muted); }
+.star-notes li::before { content: "\2606  "; }
+.star-notes li.on { color: var(--milk); }
+.star-notes li.on::before { content: "\2605  "; color: var(--tangerine); }
+.tally {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 16px;
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--chip);
+  font-variant-numeric: tabular-nums;
+}
+.tally dt { color: var(--muted); }
+.tally dd { margin: 0; text-align: right; font-weight: 700; }
+.tally .total { padding-top: 6px; border-top: 1px solid var(--line); color: var(--milk); font-weight: 900; font-size: 18px; }
+.tally dd.total { color: var(--tangerine); }
+
+/* ==========================================================================
+   9. SMALL AND SHORT SCREENS, AND REDUCED MOTION
+   ========================================================================== */
+@media (max-width: 720px) {
+  .hud { flex-wrap: wrap; }
+  .hud-stats { order: 3; flex-basis: 100%; justify-content: space-between; }
+  .stat { padding: 4px 10px; font-size: 15px; }
+  .help-grid { grid-template-columns: minmax(0, 1fr); }
+  .screen-title { background: linear-gradient(0deg, rgba(8, 6, 26, 0.95) 0%, rgba(8, 6, 26, 0.75) 55%, rgba(8, 6, 26, 0.15) 100%); }
+  .title-card { margin: auto 0 0; }
+}
+@media (max-width: 420px) {
+  .stat .label { display: none; }
+  .stat .mini { display: block; }
+  .hud-level .name { font-size: 15px; }
+  .btn { padding: 12px 20px; }
+  .facts dd { font-size: 17px; }
+}
+/* Phones held sideways: one HUD row, a shorter title, and two-column cards */
+@media (max-height: 520px) and (orientation: landscape) {
+  .hud { flex-wrap: nowrap; padding-top: calc(6px + var(--pad-top)); padding-bottom: 8px; }
+  .hud-stats { order: 0; flex-basis: auto; }
+  .icon-btn { width: 36px; height: 36px; }
+  .stat { padding: 3px 10px; }
+  .screen-title .eyebrow, .lede { display: none; }
+  .logo { font-size: clamp(40px, 8vw, 64px); }
+  .title-card { gap: 12px; }
+  .panel { gap: 10px; padding: 18px 22px; }
+  .display { font-size: 26px; }
+  .panel h2 + p, .panel .eyebrow + .display { margin-top: 0; }
+  .actions.stack { flex-direction: row; }
+  #screen-intro .panel,
+  #screen-clear .panel {
+    width: min(100%, 760px);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 10px 22px;
+    align-content: start;
+  }
+  #screen-intro .panel > *, #screen-clear .panel > * { grid-column: 1; }
+  #screen-intro .intro-new { grid-column: 2; grid-row: 1 / 4; }
+  #screen-intro .facts { grid-column: 2; grid-row: 4; }
+  #screen-clear .tally { grid-column: 2; grid-row: 1 / 6; align-self: start; }
+  #screen-clear .stars-big { justify-content: flex-start; font-size: 40px; }
+  #screen-clear .star-notes { justify-content: flex-start; margin: 0; }
+  .panel .actions { align-items: flex-start; align-self: end; }
+  #screen-intro .intro-new { padding: 10px 12px; }
+  #screen-intro .intro-new canvas { display: none; }
+  #intro-goal, #intro-tip { font-size: 15px; line-height: 1.4; }
+  .facts div { padding: 6px 10px; }
+  .facts dt { font-size: 10px; letter-spacing: 0.06em; }
+  .facts dd { font-size: 16px; }
+}
+@media (max-height: 520px) and (orientation: landscape) and (max-width: 720px) {
+  .hud-level { display: none; }
+  .hud-stats { margin-right: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-delay: 0s !important; transition-duration: 0.01ms !important; }
+}
+</style>
+</head>
+<body>
+<main id="stage" aria-label="Cat Galaxy">
+
+  <!-- The main game area. Everything in the galaxy is drawn on this canvas. -->
+  <canvas id="game" aria-label="Game area. Press Space or tap to leap."></canvas>
+
+  <!-- HUD: shown while a level is on -->
+  <header class="hud is-off" id="hud">
+    <div class="hud-level"><span class="num" id="hud-num">Level 1</span><span class="name" id="hud-name">First Hop</span></div>
+    <ul class="hud-stats">
+      <li class="stat" id="stat-fish" title="Golden fish caught"><canvas data-icon="fish" width="22" height="16"></canvas><span id="hud-fish">0/3</span></li>
+      <li class="stat" id="stat-lives" title="Lives left"><canvas data-icon="paw" width="16" height="16"></canvas><span id="hud-lives">9</span></li>
+      <li class="stat" title="Score"><canvas class="mini" data-icon="star" width="14" height="14"></canvas><span class="label">Score</span><span id="hud-score">0</span></li>
+      <li class="stat" title="Seconds in this level"><canvas class="mini" data-icon="clock" width="14" height="14"></canvas><span class="label">Time</span><span id="hud-time">0.0</span></li>
+    </ul>
+    <div class="hud-buttons">
+      <button class="icon-btn" id="btn-sound" type="button" aria-label="Sound" aria-pressed="true" title="Sound on or off (M)">
+        <svg class="when-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 8.5a5 5 0 0 1 0 7l-1.4-1.4a3 3 0 0 0 0-4.2zM18.6 5.9a8.6 8.6 0 0 1 0 12.2l-1.4-1.4a6.6 6.6 0 0 0 0-9.4z"/></svg>
+        <svg class="when-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16.3 9.7l1.4-1.4 2 2 2-2 1.4 1.4-2 2 2 2-1.4 1.4-2-2-2 2-1.4-1.4 2-2z"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-pause" type="button" aria-label="Pause" title="Pause (P)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1.5"/><rect x="14" y="5" width="4" height="14" rx="1.5"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <!-- TITLE -->
+  <section class="screen screen-title" id="screen-title" aria-labelledby="title-logo">
+    <div class="title-card">
+      <p class="eyebrow">A one-button space adventure</p>
+      <h1 class="logo" id="title-logo"><span class="ears">Cat</span> <span class="galaxy">Galaxy</span></h1>
+      <p class="lede">Mochi the space cat has run out of snacks. Hop from planet to planet, catch every golden fish, then dive into the wormhole to reach the next corner of the galaxy.</p>
+      <div class="actions">
+        <button class="btn btn-primary" id="btn-play" type="button" data-primary>Play</button>
+        <button class="btn" type="button" data-go="levels">Levels</button>
+        <button class="btn" type="button" data-go="help">How to play</button>
+      </div>
+      <p class="title-meta"><span id="title-stars">0 of 24 stars</span><span id="title-best">Best score 0</span><span>Space, click or tap to leap</span></p>
+    </div>
+  </section>
+
+  <!-- LEVEL SELECT -->
+  <section class="screen" id="screen-levels" aria-labelledby="levels-title" hidden>
+    <div class="panel panel-wide">
+      <div class="panel-head">
+        <h2 class="display" id="levels-title">Choose a level</h2>
+        <p class="muted" id="levels-stars">0 of 24 stars</p>
+      </div>
+      <p class="muted">Finish a level to open the next one. Starting from here gives you nine lives and a fresh score.</p>
+      <div class="level-grid" id="level-grid"></div>
+      <div class="actions"><button class="btn" type="button" data-go="title" data-primary>Back</button></div>
+    </div>
+  </section>
+
+  <!-- HOW TO PLAY -->
+  <section class="screen" id="screen-help" aria-labelledby="help-title" hidden>
+    <div class="panel panel-wide help">
+      <h2 class="display" id="help-title">How to play</h2>
+      <div class="help-grid">
+        <section>
+          <h3>The goal</h3>
+          <p>Catch every golden fish in the level. When the last one is caught, the wormhole opens. Fly into it to finish the level. There are eight levels, and each one adds something new.</p>
+        </section>
+        <section>
+          <h3>Leaping</h3>
+          <p>Mochi walks around each planet as it spins. When you leap, Mochi flies straight out from the planet's centre. The dotted line shows the way. Planets pull Mochi in when Mochi passes close by.</p>
+        </section>
+        <section>
+          <h3>Controls</h3>
+          <dl class="keys">
+            <dt><kbd>Space</kbd><kbd>&uarr;</kbd><kbd>W</kbd> or tap</dt><dd>Leap</dd>
+            <dt><kbd>P</kbd><kbd>Esc</kbd></dt><dd>Pause</dd>
+            <dt><kbd>R</kbd></dt><dd>Restart the level</dd>
+            <dt><kbd>M</kbd></dt><dd>Sound on or off</dd>
+          </dl>
+        </section>
+        <section>
+          <h3>Nine lives</h3>
+          <p>You lose a life if Mochi drifts past the dotted edge of space or touches a danger below. Mochi comes back on the last planet Mochi stood on, and fish already caught stay caught.</p>
+        </section>
+      </div>
+      <div>
+        <h3>What you will meet</h3>
+        <ul class="legend">
+          <li><canvas data-icon="fish" width="44" height="44"></canvas><div><b>Golden fish</b><span>Catch them all to open the wormhole. 100 points each.</span></div></li>
+          <li><canvas data-icon="yarn" width="44" height="44"></canvas><div><b>Cosmic yarn</b><span>A bonus you don't need to finish. 300 points.</span></div></li>
+          <li><canvas data-icon="portal" width="44" height="44"></canvas><div><b>Wormhole</b><span>Opens when every fish is caught. Fly in to finish.</span></div></li>
+          <li><canvas data-icon="rock" width="44" height="44"></canvas><div><b>Moon rock</b><span>Circles planets or drifts by. Costs a life.</span></div></li>
+          <li><canvas data-icon="dog" width="44" height="44"></canvas><div><b>Space dog</b><span>Patrols in a saucer. Costs a life.</span></div></li>
+          <li><canvas data-icon="sun" width="44" height="44"></canvas><div><b>Sun</b><span>Pulls Mochi in. Landing on it costs a life.</span></div></li>
+          <li><canvas data-icon="hole" width="44" height="44"></canvas><div><b>Black hole</b><span>Bends Mochi's path. Its middle costs a life.</span></div></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Stars and score</h3>
+        <p>Each level gives up to three stars: one for finishing, one for losing no lives, one for beating the par time. Fish, yarn, finishing, time left under par and a clean run all add to your score.</p>
+      </div>
+      <div class="actions"><button class="btn btn-primary" type="button" id="btn-help-back" data-primary>Got it</button></div>
+    </div>
+  </section>
+
+  <!-- LEVEL INTRO -->
+  <section class="screen" id="screen-intro" aria-labelledby="intro-name" hidden>
+    <div class="panel">
+      <p class="eyebrow" id="intro-num">Level 1 of 8</p>
+      <h2 class="display" id="intro-name">First Hop</h2>
+      <p id="intro-goal">Catch all 3 golden fish, then fly into the wormhole.</p>
+      <div class="intro-new">
+        <canvas id="intro-icon" data-icon="cat" width="52" height="52"></canvas>
+        <p id="intro-tip"></p>
+      </div>
+      <dl class="facts">
+        <div><dt>Par time</dt><dd id="intro-par">25 s</dd></div>
+        <div><dt>Lives</dt><dd id="intro-lives">9</dd></div>
+        <div><dt>Best</dt><dd id="intro-best"></dd></div>
+      </dl>
+      <div class="actions">
+        <button class="btn btn-primary" id="btn-go" type="button" data-primary>Launch</button>
+        <button class="btn" type="button" data-go="title">Menu</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- PAUSE -->
+  <section class="screen" id="screen-pause" aria-labelledby="pause-title" hidden>
+    <div class="panel panel-narrow">
+      <h2 class="display" id="pause-title">Paused</h2>
+      <p class="muted" id="pause-info"></p>
+      <div class="actions stack">
+        <button class="btn btn-primary" id="btn-resume" type="button" data-primary>Resume</button>
+        <button class="btn" id="btn-restart" type="button">Restart level</button>
+        <button class="btn" type="button" data-go="help">How to play</button>
+        <button class="btn" type="button" data-go="title">Quit to menu</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- LEVEL COMPLETE -->
+  <section class="screen" id="screen-clear" aria-labelledby="clear-title" hidden>
+    <div class="panel">
+      <p class="eyebrow" id="clear-num">Level 1 complete</p>
+      <h2 class="display" id="clear-title">Purr-fect!</h2>
+      <div class="stars-big" id="clear-stars" role="img" aria-label="3 of 3 stars"><span>&#9733;</span><span>&#9733;</span><span>&#9733;</span></div>
+      <ul class="star-notes" id="clear-notes"><li>Finished</li><li>No lives lost</li><li>Under par</li></ul>
+      <dl class="tally" id="clear-tally"></dl>
+      <div class="actions">
+        <button class="btn btn-primary" id="btn-next" type="button" data-primary>Next level</button>
+        <button class="btn" id="btn-replay" type="button">Play again</button>
+        <button class="btn" type="button" data-go="title">Menu</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- OUT OF LIVES -->
+  <section class="screen" id="screen-over" aria-labelledby="over-title" hidden>
+    <div class="panel panel-narrow">
+      <p class="eyebrow" id="over-num">Level 1</p>
+      <h2 class="display" id="over-title">Out of lives</h2>
+      <p>All nine lives are used up. Mochi is fine, just a little dizzy. Try the level again with nine fresh lives.</p>
+      <div class="actions">
+        <button class="btn btn-primary" id="btn-retry" type="button" data-primary>Try again</button>
+        <button class="btn" type="button" data-go="title">Menu</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- THE END -->
+  <section class="screen" id="screen-win" aria-labelledby="win-title" hidden>
+    <div class="panel">
+      <p class="eyebrow">All 8 levels complete</p>
+      <h2 class="display" id="win-title">Mochi is home!</h2>
+      <p>Every fish in the galaxy is caught, and Mochi is curled up for a very long nap.</p>
+      <dl class="facts">
+        <div><dt>Score</dt><dd id="win-score">0</dd></div>
+        <div><dt>Stars</dt><dd id="win-stars">0/24</dd></div>
+        <div><dt>Best</dt><dd id="win-best">0</dd></div>
+      </dl>
+      <div class="actions">
+        <button class="btn btn-primary" id="btn-again" type="button" data-primary>Play again</button>
+        <button class="btn" type="button" data-go="levels">Levels</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- =========================================================================
+     THE RULES
+     Tuning, levels, movement, collisions and scoring. No drawing, no page:
+     the same code runs in the browser and in the Node checks in test/.
+     ========================================================================= -->
+<script id="core">
+var CatGalaxy = (function () {
+  'use strict';
+
+  const TAU = Math.PI * 2;
+
+  /* ------------------------------------------------------------------------
+   * 1. TUNING. Every number that shapes how the game feels.
+   *    Distances are world units (the galaxy is 1200 x 800), times seconds.
+   * ---------------------------------------------------------------------- */
+  const CONFIG = {
+    WIDTH: 1200,
+    HEIGHT: 800,
+    EDGE: 40,             // how far past the frame Mochi can drift before being lost in space
+    STEP: 1 / 120,        // the rules run 120 times a second, always in the same steps
+    LIVES: 9,             // a cat has nine lives
+    LAUNCH_SPEED: 430,    // Mochi's speed when leaping
+    MAX_SPEED: 900,       // a black hole can sling Mochi faster, but not faster than this
+    CAT_RADIUS: 14,       // Mochi's size for touching things
+    CAT_LIFT: 16,         // from the planet's surface to Mochi's middle
+    PLANET_PULL: 700,     // pull at a planet's surface; it weakens with distance squared...
+    PLANET_REACH: 75,     // ...and stops this far above the surface
+    SUN_PULL: 900,
+    SUN_REACH: 110,
+    HOLE_PULL: 1.6e7,     // a black hole pulls with HOLE_PULL / distance squared
+    HOLE_CORE: 24,        // the black middle of a black hole
+    FISH_RADIUS: 16,
+    YARN_RADIUS: 16,
+    PORTAL_RADIUS: 34,
+    DOG_RADIUS: 20,
+    MAX_FLIGHT: 6,        // seconds adrift before Mochi counts as lost in space
+    LAND_PAUSE: 0.15,     // after landing, Mochi needs this long before the next leap
+    RESPAWN_DELAY: 1.2,
+    SHIELD_TIME: 1.5,     // after coming back, nothing can hurt Mochi for this long
+    WARP_TIME: 1.0,       // the swirl into the wormhole
+    GUIDE_TIME: 0.42,     // how far ahead the dotted guide line looks
+    SCORE: { FISH: 100, YARN: 300, CLEAR: 500, CLEAN_RUN: 500, PER_SECOND: 25 }
+  };
+
+  /* ------------------------------------------------------------------------
+   * 2. LEVEL BUILDING BLOCKS
+   *    planet(x, y, radius, spin, kind, move)  spin is radians per second;
+   *                                             negative spins the other way.
+   *                                             kind: meadow ice candy moon
+   *                                             desert ocean, or sun (deadly)
+   *    fish(x, y, move)   yarn(x, y, move)   rock(x, y, radius, move)
+   *    dog(x, y, move)    hole(x, y, reach)
+   *
+   *    Ways to move (any of the above can take one):
+   *    glide(x2, y2, seconds, phase)       slides to (x2, y2) and back
+   *    circle(cx, cy, dist, speed, phase)  circles a point
+   *    orbit(planet, dist, speed, phase)   circles a planet, by its number in
+   *                                         the planets list (it must come
+   *                                         earlier in that list)
+   * ---------------------------------------------------------------------- */
+  const planet = (x, y, r, spin, kind, move) => ({ x, y, r, spin, kind, move });
+  const fish = (x, y, move) => ({ x, y, move });
+  const yarn = (x, y, move) => ({ x, y, move });
+  const rock = (x, y, r, move) => ({ x, y, r, move });
+  const dog = (x, y, move) => ({ x, y, move });
+  const hole = (x, y, reach) => ({ x, y, reach });
+  const glide = (x2, y2, period, phase = 0) => ({ type: 'line', x2, y2, period, phase });
+  const circle = (cx, cy, dist, speed, phase = 0) => ({ type: 'orbit', cx, cy, dist, speed, phase });
+  const orbit = (around, dist, speed, phase = 0) => ({ type: 'orbit', around, dist, speed, phase });
+
+  /* ------------------------------------------------------------------------
+   * 3. THE EIGHT LEVELS, easiest first.
+   *    start: the planet Mochi begins on   par: seconds for the time star
+   *    icon + tip: the "new in this level" note on the intro card
+   *    theme: two colours for the nebula behind the level
+   * ---------------------------------------------------------------------- */
+  const LEVELS = [
+    {
+      name: 'First Hop',
+      icon: 'cat',
+      tip: 'Mochi walks around each planet. Leap when Mochi faces the next one, and follow the dotted line.',
+      par: 20,
+      theme: ['#4b2a8c', '#16507a'],
+      start: 0,
+      planets: [
+        planet(170, 600, 72, 0.9, 'meadow'),
+        planet(480, 370, 60, -1.0, 'ice'),
+        planet(820, 560, 66, 0.9, 'candy'),
+        planet(1040, 250, 60, -1.0, 'desert')
+      ],
+      fish: [fish(325, 485), fish(650, 465), fish(930, 405)],
+      portal: { x: 700, y: 150 }
+    },
+    {
+      name: 'Fish Belt',
+      icon: 'yarn',
+      tip: '<b>Cosmic yarn</b> is a bonus worth 300 points. You can finish without it.',
+      par: 35,
+      theme: ['#17506e', '#5b2a7c'],
+      start: 0,
+      planets: [
+        planet(150, 400, 62, 1.2, 'meadow'),
+        planet(430, 180, 55, -1.3, 'ice'),
+        planet(430, 620, 58, 1.3, 'candy'),
+        planet(780, 400, 66, -1.2, 'moon'),
+        planet(1060, 170, 55, 1.4, 'desert'),
+        planet(1060, 630, 55, -1.4, 'ocean')
+      ],
+      fish: [fish(290, 290), fish(290, 510), fish(605, 290), fish(605, 510), fish(920, 285), fish(920, 515)],
+      yarn: [yarn(745, 175)],
+      portal: { x: 1060, y: 400 }
+    },
+    {
+      name: 'Spin Cycle',
+      icon: 'planet',
+      tip: '<b>Small planets spin fast.</b> Watch the rhythm for a turn or two, then leap.',
+      par: 30,
+      theme: ['#6e2a5c', '#253a8c'],
+      start: 0,
+      planets: [
+        planet(130, 680, 65, 0.9, 'meadow'),
+        planet(360, 470, 40, 2.0, 'ice'),
+        planet(150, 230, 50, -1.8, 'candy'),
+        planet(520, 130, 45, 2.2, 'moon'),
+        planet(700, 400, 70, -0.8, 'ocean'),
+        planet(880, 680, 42, 2.0, 'desert'),
+        planet(1080, 450, 48, -2.1, 'ice'),
+        planet(950, 150, 55, 1.6, 'candy')
+      ],
+      fish: [fish(245, 575), fish(255, 350), fish(335, 180), fish(610, 265), fish(790, 540), fish(980, 565), fish(1015, 300)],
+      yarn: [yarn(500, 690)],
+      portal: { x: 1130, y: 80 }
+    },
+    {
+      name: 'Moon Rocks',
+      icon: 'rock',
+      tip: '<b>Moon rocks</b> circle some planets and drift through space. Touching one costs a life.',
+      par: 40,
+      theme: ['#5c3a2a', '#2b2c70'],
+      start: 0,
+      planets: [
+        planet(160, 400, 65, 1.1, 'meadow'),
+        planet(480, 200, 58, -1.2, 'ice'),
+        planet(480, 610, 58, 1.2, 'desert'),
+        planet(800, 400, 70, -1.0, 'moon'),
+        planet(1070, 190, 55, 1.4, 'candy'),
+        planet(1070, 620, 55, -1.4, 'ocean')
+      ],
+      rocks: [
+        rock(0, 0, 16, orbit(0, 125, 1.6)),
+        rock(0, 0, 15, orbit(1, 112, -1.8, 1)),
+        rock(0, 0, 17, orbit(3, 132, 1.2)),
+        rock(0, 0, 17, orbit(3, 132, 1.2, Math.PI)),
+        rock(640, 80, 20, glide(640, 720, 8))
+      ],
+      fish: [fish(320, 300), fish(320, 505), fish(640, 300), fish(640, 505), fish(935, 295), fish(935, 510)],
+      yarn: [yarn(800, 195)],
+      portal: { x: 1070, y: 405 }
+    },
+    {
+      name: 'Drifting Worlds',
+      icon: 'drift',
+      tip: '<b>Some planets drift.</b> Leap where a planet is going to be, not where it is now.',
+      par: 28,
+      theme: ['#1f5a5a', '#5a2a6e'],
+      start: 0,
+      planets: [
+        planet(130, 650, 62, 1.0, 'meadow'),
+        planet(330, 220, 50, -1.3, 'ice', glide(330, 470, 7)),
+        planet(640, 400, 56, 1.2, 'moon'),
+        planet(560, 110, 44, -1.6, 'candy', glide(820, 110, 6)),
+        planet(1080, 200, 50, 1.3, 'desert', glide(1080, 420, 6, Math.PI)),
+        planet(900, 660, 58, -1.1, 'ocean')
+      ],
+      fish: [fish(230, 500), fish(485, 330), fish(640, 250), fish(860, 350), fish(990, 540), fish(770, 530)],
+      yarn: [yarn(950, 150)],
+      portal: { x: 470, y: 690 }
+    },
+    {
+      name: 'Event Horizon',
+      icon: 'hole',
+      tip: '<b>A black hole</b> bends Mochi\'s path. Watch the dotted line curve, and keep out of the middle.',
+      par: 38,
+      theme: ['#3c1a5e', '#6e2a3c'],
+      start: 0,
+      planets: [
+        planet(140, 400, 60, 1.1, 'meadow'),
+        planet(360, 140, 52, -1.2, 'ice'),
+        planet(840, 140, 52, 1.2, 'candy'),
+        planet(1060, 400, 60, -1.1, 'ocean'),
+        planet(840, 660, 52, 1.2, 'desert'),
+        planet(360, 660, 52, -1.2, 'moon')
+      ],
+      holes: [hole(600, 400, 260)],
+      fish: [fish(254, 266), fish(600, 127), fish(948, 268), fish(946, 534), fish(600, 673), fish(252, 533)],
+      yarn: [yarn(701, 309)],
+      portal: { x: 600, y: 245 }
+    },
+    {
+      name: 'Dog Patrol',
+      icon: 'dog',
+      tip: '<b>Space dogs</b> patrol in saucers, and the <b>sun</b> in the middle is too hot to land on. Keep clear of both.',
+      par: 40,
+      theme: ['#6e3418', '#18406e'],
+      start: 0,
+      planets: [
+        planet(130, 660, 60, 1.0, 'meadow'),
+        planet(300, 260, 54, -1.3, 'ice'),
+        planet(640, 110, 50, 1.4, 'candy'),
+        planet(980, 230, 56, -1.3, 'moon'),
+        planet(1060, 620, 60, 1.2, 'ocean'),
+        planet(640, 690, 52, -1.4, 'desert'),
+        planet(640, 400, 70, 0.3, 'sun')
+      ],
+      dogs: [
+        dog(470, 170, glide(470, 560, 5)),
+        dog(810, 240, glide(810, 600, 6, Math.PI)),
+        dog(0, 0, circle(640, 400, 175, 0.6))
+      ],
+      fish: [fish(217, 455), fish(472, 184), fish(810, 170), fish(1020, 423), fish(846, 656), fish(386, 675)],
+      yarn: [yarn(856, 356)],
+      portal: { x: 1140, y: 80 }
+    },
+    {
+      name: 'Home Galaxy',
+      icon: 'portal',
+      tip: 'Everything at once. A little planet spins between the black hole and the sun. Bring Mochi home!',
+      par: 45,
+      theme: ['#2c1a6e', '#6e1a4c'],
+      start: 0,
+      planets: [
+        planet(110, 690, 56, 1.1, 'meadow'),
+        planet(120, 170, 50, -1.5, 'ice'),
+        planet(470, 110, 46, 1.4, 'candy', glide(680, 110, 6)),
+        planet(650, 700, 50, -1.4, 'moon'),
+        planet(1090, 150, 50, 1.6, 'desert'),
+        planet(1090, 680, 54, -1.3, 'ocean'),
+        planet(640, 400, 36, 1.6, 'ice'),
+        planet(900, 420, 58, 0.3, 'sun')
+      ],
+      holes: [hole(380, 420, 220)],
+      rocks: [rock(0, 0, 15, orbit(3, 104, 1.7))],
+      dogs: [dog(770, 250, glide(770, 550, 5))],
+      fish: [fish(110, 430), fish(300, 140), fish(880, 130), fish(1090, 415), fish(870, 690), fish(380, 695), fish(640, 255)],
+      yarn: [yarn(505, 520)],
+      portal: { x: 645, y: 560 }
+    }
+  ];
+
+  /* ------------------------------------------------------------------------
+   * 4. THE WORLD: one level in play, as plain data.
+   * ---------------------------------------------------------------------- */
+  function createWorld(index, lives) {
+    const L = LEVELS[index];
+    // Each thing keeps where it started (x0, y0) so movement can be worked out from the clock
+    const copy = (list) => (list || []).map((e) => Object.assign({}, e, { x0: e.x, y0: e.y }));
+    const w = {
+      index,
+      level: L,
+      t: 0,                                   // seconds since the level began
+      lives: lives == null ? CONFIG.LIVES : lives,
+      planets: copy(L.planets),
+      fish: copy(L.fish).map((f) => Object.assign(f, { got: false })),
+      yarn: copy(L.yarn).map((y) => Object.assign(y, { got: false })),
+      rocks: copy(L.rocks),
+      dogs: copy(L.dogs),
+      holes: copy(L.holes),
+      portal: Object.assign({ open: false }, L.portal, { x0: L.portal.x, y0: L.portal.y }),
+      cat: {
+        state: 'planet',     // planet | flying | dead | warp
+        planet: L.start,     // the planet Mochi is standing on
+        home: L.start,       // the planet Mochi comes back to after losing a life
+        angle: -Math.PI / 2, // where on the planet Mochi stands (radians, 0 = right, -PI/2 = top)
+        x: 0, y: 0, vx: 0, vy: 0,
+        ignore: -1,          // the planet just left: it can't pull or catch Mochi until Mochi is clear of it
+        flight: 0,           // seconds in the air
+        pause: 0.3,          // time left before Mochi may leap
+        shield: 0,           // time left of the safe spell after coming back
+        timer: 0,            // counts down the lost-a-life and wormhole animations
+        cause: ''
+      },
+      fishGot: 0,
+      yarnGot: 0,
+      points: 0,             // fish and yarn points so far in this level
+      deaths: 0,
+      finishTime: 0,
+      done: false,           // flew through the wormhole
+      over: false,           // no lives left
+      events: []             // what happened in the last step, for sounds and sparkles
+    };
+    moveAll(w);
+    seat(w.cat, w.planets[L.start]);
+    return w;
+  }
+
+  // Put something that moves where it should be at time t
+  function place(e, t, planets) {
+    const m = e.move;
+    if (!m) return;
+    if (m.type === 'orbit') {
+      const c = m.around != null ? planets[m.around] : null;
+      const cx = c ? c.x : m.cx;
+      const cy = c ? c.y : m.cy;
+      const a = m.phase + m.speed * t;
+      e.x = cx + Math.cos(a) * m.dist;
+      e.y = cy + Math.sin(a) * m.dist;
+    } else {
+      // Glides ease out and back: 0 at the start point, 1 at (x2, y2)
+      const s = (1 - Math.cos(TAU * t / m.period + m.phase)) / 2;
+      e.x = e.x0 + (m.x2 - e.x0) * s;
+      e.y = e.y0 + (m.y2 - e.y0) * s;
+    }
+  }
+
+  function moveAll(w) {
+    const t = w.t;
+    for (const p of w.planets) place(p, t, w.planets);   // planets first: moons follow them
+    for (const list of [w.fish, w.yarn, w.rocks, w.dogs]) for (const e of list) place(e, t, w.planets);
+    place(w.portal, t, w.planets);
+  }
+
+  // Stand Mochi on a planet at Mochi's current angle
+  function seat(c, p) {
+    const d = p.r + CONFIG.CAT_LIFT;
+    c.x = p.x + Math.cos(c.angle) * d;
+    c.y = p.y + Math.sin(c.angle) * d;
+  }
+
+  function emit(w, type, x, y, extra) {
+    w.events.push(Object.assign({ type, x, y }, extra));
+  }
+
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+  function outside(x, y) {
+    const E = CONFIG.EDGE;
+    return x < -E || y < -E || x > CONFIG.WIDTH + E || y > CONFIG.HEIGHT + E;
+  }
+
+  /* ------------------------------------------------------------------------
+   * 5. GRAVITY AND FLIGHT
+   *    Planets pull only when Mochi is close; black holes pull from far away.
+   *    The same drift() moves Mochi in play and in the dotted guide line.
+   * ---------------------------------------------------------------------- */
+  const PULL = { x: 0, y: 0 };
+
+  function pull(w, x, y, ignore) {
+    PULL.x = 0;
+    PULL.y = 0;
+    for (let i = 0; i < w.planets.length; i++) {
+      if (i === ignore) continue;
+      const p = w.planets[i];
+      const dx = p.x - x, dy = p.y - y;
+      const d = Math.hypot(dx, dy);
+      const sun = p.kind === 'sun';
+      if (d < 1 || d > p.r + (sun ? CONFIG.SUN_REACH : CONFIG.PLANET_REACH)) continue;
+      const a = (sun ? CONFIG.SUN_PULL : CONFIG.PLANET_PULL) * (p.r * p.r) / (d * d);
+      PULL.x += dx / d * a;
+      PULL.y += dy / d * a;
+    }
+    for (const h of w.holes) {
+      const dx = h.x - x, dy = h.y - y;
+      const d = Math.hypot(dx, dy);
+      if (d < 1 || d > h.reach) continue;
+      const a = CONFIG.HOLE_PULL / Math.max(d * d, 1600);
+      PULL.x += dx / d * a;
+      PULL.y += dy / d * a;
+    }
+    return PULL;
+  }
+
+  // One step of flight for anything shaped like { x, y, vx, vy, ignore }
+  function drift(w, b) {
+    const S = CONFIG.STEP;
+    const g = pull(w, b.x, b.y, b.ignore);
+    b.vx += g.x * S;
+    b.vy += g.y * S;
+    const speed = Math.hypot(b.vx, b.vy);
+    if (speed > CONFIG.MAX_SPEED) {
+      b.vx *= CONFIG.MAX_SPEED / speed;
+      b.vy *= CONFIG.MAX_SPEED / speed;
+    }
+    b.x += b.vx * S;
+    b.y += b.vy * S;
+    // Once clear of the planet it left, that planet can pull and catch again
+    if (b.ignore >= 0) {
+      const p = w.planets[b.ignore];
+      if (dist(b, p) > p.r + CONFIG.PLANET_REACH) b.ignore = -1;
+    }
+  }
+
+  // The planet (if any) that a body at (x, y) is touching
+  function planetAt(w, x, y, ignore) {
+    for (let i = 0; i < w.planets.length; i++) {
+      if (i === ignore) continue;
+      const p = w.planets[i];
+      if (Math.hypot(p.x - x, p.y - y) < p.r + CONFIG.CAT_RADIUS) return i;
+    }
+    return -1;
+  }
+
+  function holeAt(w, x, y) {
+    for (const h of w.holes) if (Math.hypot(h.x - x, h.y - y) < CONFIG.HOLE_CORE + CONFIG.CAT_RADIUS * 0.5) return true;
+    return false;
+  }
+
+  /* ------------------------------------------------------------------------
+   * 6. ONE STEP OF THE GAME. jump is true on the step the player leaps.
+   * ---------------------------------------------------------------------- */
+  function step(w, jump) {
+    w.events.length = 0;
+    if (w.done || w.over) return;
+    const c = w.cat;
+    w.t += CONFIG.STEP;
+    moveAll(w);
+    if (c.shield > 0) c.shield -= CONFIG.STEP;
+
+    if (c.state === 'dead') {
+      c.timer -= CONFIG.STEP;
+      if (c.timer <= 0) {
+        if (w.lives > 0) respawn(w);
+        else { w.over = true; emit(w, 'gameover', c.x, c.y); }
+      }
+      return;
+    }
+
+    if (c.state === 'warp') {
+      // Swirl into the middle of the wormhole
+      c.timer -= CONFIG.STEP;
+      c.x += (w.portal.x - c.x) * 0.08;
+      c.y += (w.portal.y - c.y) * 0.08;
+      if (c.timer <= 0) { w.done = true; emit(w, 'complete', c.x, c.y); }
+      return;
+    }
+
+    if (c.state === 'planet') {
+      const p = w.planets[c.planet];
+      c.angle += p.spin * CONFIG.STEP;     // the planet carries Mochi round
+      seat(c, p);
+      if (c.pause > 0) c.pause -= CONFIG.STEP;
+      else if (jump) launch(w);
+    } else {
+      fly(w);
+    }
+
+    if (c.state === 'planet' || c.state === 'flying') pickUp(w);
+    if ((c.state === 'planet' || c.state === 'flying') && c.shield <= 0) hazards(w);
+  }
+
+  function launch(w) {
+    const c = w.cat;
+    c.state = 'flying';
+    c.vx = Math.cos(c.angle) * CONFIG.LAUNCH_SPEED;   // straight out from the planet's centre
+    c.vy = Math.sin(c.angle) * CONFIG.LAUNCH_SPEED;
+    c.ignore = c.planet;
+    c.flight = 0;
+    emit(w, 'jump', c.x, c.y);
+  }
+
+  function fly(w) {
+    const c = w.cat;
+    drift(w, c);
+    c.flight += CONFIG.STEP;
+    const hit = planetAt(w, c.x, c.y, c.ignore);
+    if (hit >= 0) {
+      if (w.planets[hit].kind === 'sun') die(w, 'sun');
+      else land(w, hit);
+      return;
+    }
+    if (outside(c.x, c.y) || c.flight > CONFIG.MAX_FLIGHT) die(w, 'lost');
+  }
+
+  function land(w, i) {
+    const c = w.cat, p = w.planets[i];
+    c.state = 'planet';
+    c.planet = i;
+    c.home = i;
+    c.angle = Math.atan2(c.y - p.y, c.x - p.x);
+    c.vx = c.vy = 0;
+    c.ignore = -1;
+    c.pause = CONFIG.LAND_PAUSE;
+    seat(c, p);
+    emit(w, 'land', c.x, c.y);
+  }
+
+  function die(w, cause) {
+    const c = w.cat;
+    c.state = 'dead';
+    c.cause = cause;
+    c.timer = CONFIG.RESPAWN_DELAY;
+    w.lives -= 1;
+    w.deaths += 1;
+    emit(w, 'die', c.x, c.y, { cause });
+  }
+
+  function respawn(w) {
+    const c = w.cat;
+    c.state = 'planet';
+    c.planet = c.home;
+    c.angle = -Math.PI / 2;
+    c.ignore = -1;
+    c.vx = c.vy = 0;
+    c.pause = 0.3;
+    c.shield = CONFIG.SHIELD_TIME;
+    seat(c, w.planets[c.planet]);
+    emit(w, 'respawn', c.x, c.y);
+  }
+
+  function pickUp(w) {
+    const c = w.cat, S = CONFIG.SCORE;
+    for (const f of w.fish) {
+      if (f.got || dist(c, f) > CONFIG.FISH_RADIUS + CONFIG.CAT_RADIUS) continue;
+      f.got = true;
+      w.fishGot += 1;
+      w.points += S.FISH;
+      emit(w, 'fish', f.x, f.y, { points: S.FISH, left: w.fish.length - w.fishGot });
+    }
+    for (const y of w.yarn) {
+      if (y.got || dist(c, y) > CONFIG.YARN_RADIUS + CONFIG.CAT_RADIUS) continue;
+      y.got = true;
+      w.yarnGot += 1;
+      w.points += S.YARN;
+      emit(w, 'yarn', y.x, y.y, { points: S.YARN });
+    }
+    const portal = w.portal;
+    if (!portal.open && w.fishGot === w.fish.length) {
+      portal.open = true;
+      emit(w, 'open', portal.x, portal.y);
+    }
+    if (portal.open && dist(c, portal) < CONFIG.PORTAL_RADIUS + CONFIG.CAT_RADIUS * 0.5) {
+      c.state = 'warp';
+      c.timer = CONFIG.WARP_TIME;
+      w.finishTime = w.t;
+      emit(w, 'warp', c.x, c.y);
+    }
+  }
+
+  function hazards(w) {
+    const c = w.cat;
+    for (const r of w.rocks) if (dist(c, r) < r.r + CONFIG.CAT_RADIUS - 2) return die(w, 'rock');
+    for (const d of w.dogs) if (dist(c, d) < CONFIG.DOG_RADIUS + CONFIG.CAT_RADIUS - 2) return die(w, 'dog');
+    if (holeAt(w, c.x, c.y)) return die(w, 'hole');
+  }
+
+  /* ------------------------------------------------------------------------
+   * 7. THE GUIDE LINE: where Mochi would fly if the player leapt now.
+   *    It treats moving things as standing still, so it is a guide, not a
+   *    promise. Returns { path: [x0, y0, x1, y1, ...], planet, danger }.
+   * ---------------------------------------------------------------------- */
+  function predict(w, seconds) {
+    const c = w.cat;
+    const out = { path: [], planet: -1, danger: false };
+    if (c.state !== 'planet') return out;
+    const b = {
+      x: c.x, y: c.y,
+      vx: Math.cos(c.angle) * CONFIG.LAUNCH_SPEED,
+      vy: Math.sin(c.angle) * CONFIG.LAUNCH_SPEED,
+      ignore: c.planet
+    };
+    const steps = Math.round(seconds / CONFIG.STEP);
+    for (let i = 1; i <= steps; i++) {
+      drift(w, b);
+      if (i % 3 === 0) out.path.push(b.x, b.y);
+      const hit = planetAt(w, b.x, b.y, b.ignore);
+      if (hit >= 0) {
+        out.planet = hit;
+        out.danger = w.planets[hit].kind === 'sun';
+        break;
+      }
+      if (holeAt(w, b.x, b.y) || outside(b.x, b.y)) { out.danger = true; break; }
+    }
+    return out;
+  }
+
+  /* ------------------------------------------------------------------------
+   * 8. SCORE FOR A FINISHED LEVEL
+   * ---------------------------------------------------------------------- */
+  function scoreLevel(w) {
+    const S = CONFIG.SCORE, par = w.level.par;
+    const time = w.finishTime || w.t;
+    const clean = w.deaths === 0;
+    const underPar = time <= par;
+    const r = {
+      fish: w.fishGot * S.FISH,
+      yarn: w.yarnGot * S.YARN,
+      clear: S.CLEAR,
+      timeBonus: Math.max(0, Math.ceil(par - time)) * S.PER_SECOND,
+      cleanRun: clean ? S.CLEAN_RUN : 0,
+      time,
+      clean,
+      underPar,
+      stars: 1 + (clean ? 1 : 0) + (underPar ? 1 : 0)
+    };
+    r.total = r.fish + r.yarn + r.clear + r.timeBonus + r.cleanRun;
+    return r;
+  }
+
+  // A copy of a world that can move on separately (the level data and the
+  // ways things move are shared, as they never change). Used by the checks in test/.
+  function cloneWorld(w) {
+    const all = (list) => list.map((e) => Object.assign({}, e));
+    return Object.assign({}, w, {
+      planets: all(w.planets), fish: all(w.fish), yarn: all(w.yarn), rocks: all(w.rocks),
+      dogs: all(w.dogs), holes: all(w.holes), portal: Object.assign({}, w.portal),
+      cat: Object.assign({}, w.cat), events: []
+    });
+  }
+
+  return { CONFIG, LEVELS, createWorld, step, predict, scoreLevel, cloneWorld };
+})();
+</script>
+
+<!-- =========================================================================
+     EVERYTHING YOU SEE AND HEAR
+     ========================================================================= -->
+<script id="app">
+(function () {
+  'use strict';
+
+  const G = window.CatGalaxy;
+  const { CONFIG, LEVELS } = G;
+  const W = CONFIG.WIDTH, H = CONFIG.HEIGHT, EDGE = CONFIG.EDGE;
+  const TAU = Math.PI * 2;
+  const $ = (id) => document.getElementById(id);
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const fmt = (n) => Math.round(n).toLocaleString('en-US');
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+  /* ========================================================================
+   * 1. PAGE ELEMENTS
+   * ====================================================================== */
+  const stage = $('stage');
+  const canvas = $('game');
+  const ctx = canvas.getContext('2d');
+  const hudEl = $('hud');
+  const toastEl = $('toast');
+  const screens = {
+    title: $('screen-title'), levels: $('screen-levels'), help: $('screen-help'), intro: $('screen-intro'),
+    pause: $('screen-pause'), clear: $('screen-clear'), over: $('screen-over'), win: $('screen-win')
+  };
+
+  /* ========================================================================
+   * 2. SAVED PROGRESS (kept in this browser only; the game works without it)
+   * ====================================================================== */
+  const SAVE_KEY = 'cat-galaxy-save-v1';
+  const save = readSave();
+
+  function readSave() {
+    const fresh = { unlocked: 1, stars: LEVELS.map(() => 0), best: 0, muted: false };
+    try {
+      const raw = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+      if (raw && Array.isArray(raw.stars)) {
+        fresh.unlocked = clamp(raw.unlocked | 0, 1, LEVELS.length);
+        fresh.stars = LEVELS.map((_, i) => clamp(raw.stars[i] | 0, 0, 3));
+        fresh.best = Math.max(0, raw.best | 0);
+        fresh.muted = !!raw.muted;
+      }
+    } catch (e) { /* storage is blocked: play on without saving */ }
+    return fresh;
+  }
+
+  function writeSave() {
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* ignore */ }
+  }
+
+  const totalStars = () => save.stars.reduce((a, b) => a + b, 0);
+
+  /* ========================================================================
+   * 3. SOUND: tiny synthesised effects (browsers allow sound only after the
+   *    first click, tap or key press, so wake() is called from input)
+   * ====================================================================== */
+  const sound = (function () {
+    let ac = null, out = null, muted = save.muted;
+
+    function wake() {
+      if (!ac) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        try {
+          ac = new AC();
+          out = ac.createGain();
+          out.gain.value = 0.5;
+          out.connect(ac.destination);
+        } catch (e) { ac = null; return; }
+      }
+      if (ac.state === 'suspended') ac.resume().catch(() => {});
+    }
+
+    // One note that slides from f0 to f1 Hz
+    function note(f0, f1, dur, type, vol, delay) {
+      const t0 = ac.currentTime + (delay || 0);
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(f0, t0);
+      if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t0 + dur);
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(vol, t0 + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      o.connect(g);
+      g.connect(out);
+      o.start(t0);
+      o.stop(t0 + dur + 0.05);
+    }
+
+    // A buzzy tone through a moving filter sounds a little like "mew"
+    function meow() {
+      const t0 = ac.currentTime;
+      const o = ac.createOscillator(), f = ac.createBiquadFilter(), g = ac.createGain();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(470, t0);
+      o.frequency.linearRampToValueAtTime(800, t0 + 0.12);
+      o.frequency.linearRampToValueAtTime(540, t0 + 0.38);
+      f.type = 'bandpass';
+      f.Q.value = 3;
+      f.frequency.setValueAtTime(900, t0);
+      f.frequency.linearRampToValueAtTime(2100, t0 + 0.14);
+      f.frequency.linearRampToValueAtTime(1100, t0 + 0.38);
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.45, t0 + 0.04);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.42);
+      o.connect(f);
+      f.connect(g);
+      g.connect(out);
+      o.start(t0);
+      o.stop(t0 + 0.45);
+    }
+
+    const EFFECTS = {
+      jump: () => note(320, 760, 0.16, 'triangle', 0.22),
+      land: () => note(190, 90, 0.12, 'sine', 0.3),
+      fish: () => { note(988, 988, 0.08, 'square', 0.07); note(1319, 1319, 0.16, 'square', 0.07, 0.07); },
+      yarn: () => [784, 988, 1175, 1568].forEach((f, i) => note(f, f, 0.12, 'triangle', 0.15, i * 0.06)),
+      open: () => { note(220, 880, 0.55, 'sine', 0.22); note(440, 1760, 0.5, 'triangle', 0.07, 0.12); },
+      die: () => note(620, 70, 0.55, 'sawtooth', 0.1),
+      warp: () => { note(200, 1600, 0.8, 'sine', 0.2); note(300, 2400, 0.8, 'triangle', 0.05, 0.05); },
+      clear: () => [523, 659, 784, 1047].forEach((f, i) => note(f, f, i === 3 ? 0.45 : 0.14, 'triangle', 0.18, i * 0.11)),
+      over: () => [392, 330, 262, 196].forEach((f, i) => note(f, f * 0.98, 0.26, 'triangle', 0.16, i * 0.2)),
+      click: () => note(660, 660, 0.05, 'square', 0.05),
+      meow
+    };
+
+    return {
+      wake,
+      play(name) { if (ac && !muted && EFFECTS[name]) EFFECTS[name](); },
+      get muted() { return muted; },
+      set muted(v) { muted = v; }
+    };
+  })();
+
+  /* ========================================================================
+   * 4. VIEW: fitting the galaxy to the screen
+   *    On a tall screen (a phone held upright) the galaxy is turned a
+   *    quarter turn, so the wide levels fill the tall screen. The rules
+   *    never know: only the drawing turns.
+   * ====================================================================== */
+  const view = { w: 1, h: 1, dpr: 1, s: 1, ox: 0, oy: 0, turned: false };
+
+  function layout() {
+    const r = stage.getBoundingClientRect();
+    view.w = Math.max(1, r.width);
+    view.h = Math.max(1, r.height);
+    view.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(view.w * view.dpr);
+    canvas.height = Math.round(view.h * view.dpr);
+
+    const top = hudEl.offsetHeight;                       // keep the galaxy below the HUD
+    const pad = clamp(Math.min(view.w, view.h) * 0.02, 6, 20);
+    const aw = view.w - pad * 2;
+    const ah = view.h - top - pad * 2;
+    view.turned = ah > aw * 1.15;
+    const fw = (view.turned ? H : W) + EDGE * 2;          // the frame plus the edge of space
+    const fh = (view.turned ? W : H) + EDGE * 2;
+    view.s = Math.max(0.05, Math.min(aw / fw, ah / fh));
+    view.ox = (view.w - fw * view.s) / 2 + EDGE * view.s;
+    view.oy = top + pad + (ah - fh * view.s) / 2 + EDGE * view.s;
+    makeStars();
+  }
+
+  // Turn galaxy coordinates into screen pixels (for text drawn upright on screen)
+  function toScreen(x, y) {
+    return view.turned
+      ? { x: view.ox + y * view.s, y: view.oy + (W - x) * view.s }
+      : { x: view.ox + x * view.s, y: view.oy + y * view.s };
+  }
+
+  // Rotation that keeps a sprite upright on screen even when the galaxy is turned
+  const upright = () => (view.turned ? Math.PI / 2 : 0);
+
+  /* ========================================================================
+   * 5. DRAWING HELPERS AND COLOURS
+   * ====================================================================== */
+  const FUR = '#ffa646', FUR_DARK = '#d9712a', CREAM = '#fff1dc', PINK = '#ff9cc4', INK = '#2a1b3d';
+
+  const KINDS = {
+    meadow: { light: '#c6f7a8', base: '#5ccf78', dark: '#226b4c', spot: '#3f9d5d', dot: '#fff6c9', glow: '120,240,170' },
+    ice:    { light: '#f4fdff', base: '#9fe1ff', dark: '#3f7fc4', spot: '#e6f9ff', dot: '#ffffff', glow: '160,220,255' },
+    candy:  { light: '#ffe6f5', base: '#ff9dd2', dark: '#b8468c', spot: '#fff3f9', dot: '#ffffff', glow: '255,160,220' },
+    moon:   { light: '#f3f0fb', base: '#bdb6d6', dark: '#5f5984', spot: '#9a93b8', dot: '#dcd6ef', glow: '200,190,240' },
+    desert: { light: '#fff2c9', base: '#f4c46a', dark: '#a8682a', spot: '#df9f4c', dot: '#fff4d6', glow: '255,210,130' },
+    ocean:  { light: '#d4ebff', base: '#4f8cf0', dark: '#1f3d86', spot: '#6fd38a', dot: '#ffffff', glow: '120,170,255' },
+    sun:    { light: '#fffbe0', base: '#ffc93c', dark: '#ff7a1a', spot: '#ffe680', dot: '#ffffff', glow: '255,170,60' }
+  };
+
+  function oval(c, x, y, rx, ry, rot) {
+    c.beginPath();
+    c.ellipse(x, y, rx, ry, rot || 0, 0, TAU);
+  }
+
+  function disc(c, x, y, r) {
+    c.beginPath();
+    c.arc(x, y, r, 0, TAU);
+  }
+
+  function tri(c, ax, ay, bx, by, cx, cy, fill) {
+    c.beginPath();
+    c.moveTo(ax, ay);
+    c.lineTo(bx, by);
+    c.lineTo(cx, cy);
+    c.closePath();
+    c.fillStyle = fill;
+    c.fill();
+  }
+
+  function roundRect(c, x, y, w, h, r) {
+    c.beginPath();
+    c.moveTo(x + r, y);
+    c.arcTo(x + w, y, x + w, y + h, r);
+    c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r);
+    c.arcTo(x, y, x + w, y, r);
+    c.closePath();
+  }
+
+  // A soft glow from radius r0 (colour) out to r1 (clear), around the origin
+  function halo(c, r0, r1, color) {
+    const g = c.createRadialGradient(0, 0, Math.max(0, r0), 0, 0, r1);
+    g.addColorStop(0, color);
+    g.addColorStop(1, color.replace(/[\d.]+\)$/, '0)'));
+    c.fillStyle = g;
+    disc(c, 0, 0, r1);
+    c.fill();
+  }
+
+  function hexToRgba(hex, a) {
+    const n = parseInt(hex.slice(1), 16);
+    return 'rgba(' + (n >> 16) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+  }
+
+  // Small seeded random numbers, so each planet always gets the same craters
+  function seeded(seed) {
+    let s = seed >>> 0;
+    return function () {
+      s = (s + 0x6d2b79f5) >>> 0;
+      let t = s;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /* ========================================================================
+   * 6. SPRITES. Each draws around (0, 0) on the context it is given, so
+   *    the same art is used in the galaxy, the HUD and the menus.
+   * ====================================================================== */
+
+  // Mochi, facing right with "up" towards -y. Feet touch y = +16.
+  function catShape(c, t, pose) {
+    const flying = pose === 'fly';
+    const walk = pose === 'walk' ? Math.sin(t * 14) : 0;
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+
+    // Tail: curls up behind while walking, streams behind while flying
+    const sway = Math.sin(t * 3.2) * 2.5;
+    c.beginPath();
+    c.moveTo(-6, 10);
+    if (flying) c.bezierCurveTo(-10, 18, -4 + sway, 22, -8 + sway, 28);
+    else c.bezierCurveTo(-17, 12, -21, sway, -14, -6 + sway);
+    c.strokeStyle = FUR_DARK;
+    c.lineWidth = 5.5;
+    c.stroke();
+    c.strokeStyle = FUR;
+    c.lineWidth = 3.4;
+    c.stroke();
+
+    // Jet pack, with a flame while flying
+    if (flying) {
+      const f = 9 + Math.sin(t * 50) * 3;
+      tri(c, -15, 10, -12, 10 + f, -9, 10, '#ffb340');
+      tri(c, -13.6, 10, -12, 10 + f * 0.6, -10.4, 10, '#fff1b8');
+    }
+    roundRect(c, -15.5, -3, 7, 13, 3);
+    c.fillStyle = '#d7dcff';
+    c.fill();
+    c.strokeStyle = '#5b5f99';
+    c.lineWidth = 1.2;
+    c.stroke();
+
+    // Feet, body and belly
+    c.fillStyle = CREAM;
+    oval(c, -4 - walk * 1.6, flying ? 17 : 14.5, 3.8, 2.6);
+    c.fill();
+    oval(c, 5 + walk * 1.6, flying ? 16 : 14.5, 3.8, 2.6);
+    c.fill();
+    oval(c, 0, 6, 9.5, 8.5);
+    c.fillStyle = FUR;
+    c.fill();
+    oval(c, 2.5, 8, 5, 5.5);
+    c.fillStyle = CREAM;
+    c.fill();
+
+    // Ears (behind the head), then the head
+    tri(c, -6.5, -10, -6, -21, 1, -14.5, FUR);
+    tri(c, -5.2, -12, -5.2, -18, -0.6, -14.6, PINK);
+    tri(c, 4.5, -15, 11, -20.5, 11.5, -9.5, FUR);
+    tri(c, 5.8, -14.5, 10.2, -18.2, 10.4, -11.5, PINK);
+    disc(c, 2, -6, 10);
+    c.fillStyle = FUR;
+    c.fill();
+
+    // Tabby stripes
+    c.strokeStyle = FUR_DARK;
+    c.lineWidth = 1.6;
+    c.beginPath();
+    c.moveTo(-1.5, -15); c.lineTo(-1, -12);
+    c.moveTo(2, -16); c.lineTo(2, -12.8);
+    c.moveTo(5.5, -15.5); c.lineTo(5, -12.3);
+    c.stroke();
+
+    // Face
+    oval(c, 5.5, -2.2, 5, 3.4);
+    c.fillStyle = CREAM;
+    c.fill();
+    c.fillStyle = 'rgba(255, 120, 170, 0.5)';
+    oval(c, -1.5, -3.5, 2.1, 1.2);
+    c.fill();
+    oval(c, 10.6, -3.5, 1.5, 1.1);
+    c.fill();
+    if (t % 3.7 < 0.13) {
+      // blink
+      c.strokeStyle = INK;
+      c.lineWidth = 1.3;
+      c.beginPath();
+      c.moveTo(-1.4, -7.5); c.lineTo(2.4, -7.5);
+      c.moveTo(6.1, -7.5); c.lineTo(9.9, -7.5);
+      c.stroke();
+    } else {
+      c.fillStyle = INK;
+      disc(c, 0.5, -7.5, 2.2); c.fill();
+      disc(c, 8, -7.5, 2.2); c.fill();
+      c.fillStyle = '#fff';
+      disc(c, 1.2, -8.3, 0.75); c.fill();
+      disc(c, 8.7, -8.3, 0.75); c.fill();
+    }
+    tri(c, 5.3, -4.6, 7.7, -4.6, 6.5, -3.3, PINK);
+    c.strokeStyle = INK;
+    c.lineWidth = 0.9;
+    c.beginPath();
+    c.moveTo(4.7, -2.2);
+    c.quadraticCurveTo(5.6, -1, 6.5, -2.2);
+    c.quadraticCurveTo(7.4, -1, 8.3, -2.2);
+    c.stroke();
+    c.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+    c.lineWidth = 0.7;
+    c.beginPath();
+    c.moveTo(10.5, -3); c.lineTo(16.5, -4.6);
+    c.moveTo(10.5, -1.8); c.lineTo(16.5, -0.6);
+    c.moveTo(0.5, -2.6); c.lineTo(-5, -3.8);
+    c.stroke();
+
+    // Collar with a little bell
+    oval(c, 2, 4, 7, 1.8);
+    c.fillStyle = '#7ef0c1';
+    c.fill();
+    disc(c, 5, 5.6, 1.7);
+    c.fillStyle = '#ffd23f';
+    c.fill();
+
+    // Space helmet
+    disc(c, 2, -7, 15);
+    c.fillStyle = 'rgba(160, 220, 255, 0.1)';
+    c.fill();
+    c.strokeStyle = 'rgba(215, 240, 255, 0.8)';
+    c.lineWidth = 1.4;
+    c.stroke();
+    c.beginPath();
+    c.arc(2, -7, 12, 3.6, 4.4);
+    c.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+    c.lineWidth = 2.2;
+    c.stroke();
+  }
+
+  function fishShape(c, t) {
+    halo(c, 0, 24, 'rgba(255, 206, 90, 0.38)');
+    const wag = Math.sin(t * 9) * 2.2;
+    c.beginPath();
+    c.moveTo(-8, 0);
+    c.lineTo(-17, -7 + wag);
+    c.quadraticCurveTo(-13.5, wag, -17, 7 + wag);
+    c.closePath();
+    c.fillStyle = '#ff9f2e';
+    c.fill();
+    c.beginPath();
+    c.moveTo(-2, -7);
+    c.quadraticCurveTo(2, -13, 5, -7);
+    c.fillStyle = '#ffb23a';
+    c.fill();
+    const g = c.createLinearGradient(0, -8, 0, 8);
+    g.addColorStop(0, '#fff3b0');
+    g.addColorStop(0.5, '#ffc93d');
+    g.addColorStop(1, '#f2891d');
+    oval(c, 0, 0, 12.5, 8);
+    c.fillStyle = g;
+    c.fill();
+    c.strokeStyle = '#c86512';
+    c.lineWidth = 1.2;
+    c.stroke();
+    c.strokeStyle = 'rgba(200, 100, 20, 0.55)';
+    c.lineWidth = 1;
+    c.beginPath();
+    c.arc(-3, 0, 4, -1.1, 1.1);
+    c.moveTo(1.9, -3.5);
+    c.arc(1, 0, 4, -1.1, 1.1);
+    c.stroke();
+    c.fillStyle = INK;
+    disc(c, 6.5, -1.5, 2);
+    c.fill();
+    c.fillStyle = '#fff';
+    disc(c, 7.1, -2.1, 0.7);
+    c.fill();
+    // a twinkle, because these are fish from the stars
+    const tw = (Math.sin(t * 3) + 1) / 2;
+    c.fillStyle = 'rgba(255, 255, 255, ' + (0.4 + tw * 0.6) + ')';
+    starShape(c, 11, -9, 2 + tw * 2.5);
+  }
+
+  function starShape(c, x, y, r) {
+    c.beginPath();
+    c.moveTo(x, y - r);
+    c.quadraticCurveTo(x, y, x + r, y);
+    c.quadraticCurveTo(x, y, x, y + r);
+    c.quadraticCurveTo(x, y, x - r, y);
+    c.quadraticCurveTo(x, y, x, y - r);
+    c.fill();
+  }
+
+  function yarnShape(c, t) {
+    halo(c, 0, 26, 'rgba(255, 143, 199, 0.35)');
+    c.lineCap = 'round';
+    c.strokeStyle = '#ff7ab8';
+    c.lineWidth = 2;
+    c.beginPath();
+    c.moveTo(8, 9);
+    c.bezierCurveTo(16, 14, 11 + Math.sin(t * 3) * 3, 20, 20, 22);
+    c.stroke();
+    const g = c.createRadialGradient(-4, -5, 1, 0, 0, 13);
+    g.addColorStop(0, '#ffd3ec');
+    g.addColorStop(0.55, '#ff7ab8');
+    g.addColorStop(1, '#b8407f');
+    disc(c, 0, 0, 13);
+    c.fillStyle = g;
+    c.fill();
+    c.save();
+    disc(c, 0, 0, 13);
+    c.clip();
+    c.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+    c.lineWidth = 1.3;
+    for (let k = 0; k < 4; k++) {
+      c.beginPath();
+      c.arc(-16 + k * 7, -12 + k * 2, 17, 0.1, 1.5);
+      c.stroke();
+    }
+    c.strokeStyle = 'rgba(120, 20, 70, 0.35)';
+    for (let k = 0; k < 3; k++) {
+      c.beginPath();
+      c.arc(14 - k * 7, -14, 16, 1.7, 2.9);
+      c.stroke();
+    }
+    c.restore();
+  }
+
+  function pawShape(c) {
+    c.fillStyle = FUR;
+    oval(c, 0, 3, 5.2, 4.4);
+    c.fill();
+    disc(c, -5.4, -2.4, 2.2); c.fill();
+    disc(c, -1.9, -5.6, 2.2); c.fill();
+    disc(c, 1.9, -5.6, 2.2); c.fill();
+    disc(c, 5.4, -2.4, 2.2); c.fill();
+  }
+
+  function rockShape(c, r, verts, rot) {
+    c.rotate(rot);
+    c.beginPath();
+    verts.forEach((k, i) => {
+      const a = (i / verts.length) * TAU;
+      const x = Math.cos(a) * r * k, y = Math.sin(a) * r * k;
+      if (i) c.lineTo(x, y); else c.moveTo(x, y);
+    });
+    c.closePath();
+    const g = c.createRadialGradient(-r * 0.4, -r * 0.4, r * 0.1, 0, 0, r * 1.1);
+    g.addColorStop(0, '#c9b7a6');
+    g.addColorStop(1, '#5e4c47');
+    c.fillStyle = g;
+    c.fill();
+    c.strokeStyle = '#2f2424';
+    c.lineWidth = 2;
+    c.stroke();
+    c.fillStyle = 'rgba(55, 40, 40, 0.45)';
+    disc(c, r * 0.3, -r * 0.2, r * 0.22); c.fill();
+    disc(c, -r * 0.35, r * 0.28, r * 0.16); c.fill();
+  }
+
+  function dogShape(c, t) {
+    halo(c, 0, 38, 'rgba(255, 125, 138, 0.22)');
+    // glass dome, back half
+    c.beginPath();
+    c.arc(0, 0, 14, Math.PI, 0);
+    c.closePath();
+    c.fillStyle = 'rgba(160, 225, 255, 0.25)';
+    c.fill();
+    // the dog: floppy ears, head, snout, tongue
+    c.fillStyle = '#7a4a24';
+    oval(c, -8.6, -4, 3.4, 6.5, 0.35); c.fill();
+    oval(c, 8.6, -4, 3.4, 6.5, -0.35); c.fill();
+    disc(c, 0, -5, 8);
+    c.fillStyle = '#c88a4e';
+    c.fill();
+    oval(c, 0, -1.6, 4.8, 3.4);
+    c.fillStyle = '#f4dcc0';
+    c.fill();
+    c.fillStyle = INK;
+    oval(c, 0, -3.3, 1.9, 1.3); c.fill();
+    disc(c, -3.2, -7.5, 1.3); c.fill();
+    disc(c, 3.2, -7.5, 1.3); c.fill();
+    c.fillStyle = '#ff6f8e';
+    oval(c, 1.2, 1.3, 1.4, 1.9 + Math.sin(t * 8) * 0.4);
+    c.fill();
+    // dome rim and shine
+    c.beginPath();
+    c.arc(0, 0, 14, Math.PI, 0);
+    c.strokeStyle = 'rgba(220, 245, 255, 0.85)';
+    c.lineWidth = 1.4;
+    c.stroke();
+    c.beginPath();
+    c.arc(0, 0, 11, 3.6, 4.3);
+    c.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+    c.lineWidth = 2;
+    c.stroke();
+    // saucer
+    const g = c.createLinearGradient(0, -2, 0, 11);
+    g.addColorStop(0, '#f1f3ff');
+    g.addColorStop(0.5, '#9aa0d0');
+    g.addColorStop(1, '#4d5288');
+    oval(c, 0, 4, 27, 8);
+    c.fillStyle = g;
+    c.fill();
+    c.strokeStyle = '#33376a';
+    c.lineWidth = 1.2;
+    c.stroke();
+    oval(c, 0, 2.2, 20, 2.6);
+    c.fillStyle = 'rgba(255, 255, 255, 0.4)';
+    c.fill();
+    const lights = ['#ffd23f', '#ff8fc7', '#7ef0c1'];
+    for (let i = 0; i < 5; i++) {
+      const on = Math.floor(t * 6 + i) % 2 === 0;
+      c.fillStyle = on ? lights[i % 3] : '#4b4f80';
+      disc(c, -18 + i * 9, 7.5, 2.1);
+      c.fill();
+    }
+  }
+
+  function holeShape(c, t, reach) {
+    const core = CONFIG.HOLE_CORE;
+    if (reach) {
+      halo(c, 0, reach, 'rgba(110, 60, 200, 0.18)');
+      c.setLineDash([5, 12]);
+      c.lineDashOffset = t * 14;
+      disc(c, 0, 0, reach);
+      c.strokeStyle = 'rgba(170, 140, 255, 0.3)';
+      c.lineWidth = 2;
+      c.stroke();
+      c.setLineDash([]);
+    }
+    // the swirling disc of dust falling in
+    const colors = ['#ffb347', '#ff6fae', '#a58bff', '#ffd98a'];
+    c.lineCap = 'round';
+    c.lineWidth = 3.2;
+    for (let k = 0; k < 4; k++) {
+      c.save();
+      c.rotate(t * 1.4 + (k * TAU) / 4);
+      c.strokeStyle = colors[k];
+      let px = core * 1.05, py = 0;
+      for (let s = 0.05; s <= 1.0001; s += 0.05) {
+        const a = -s * 2.4, rr = core * 1.05 + s * 70;
+        const x = Math.cos(a) * rr, y = Math.sin(a) * rr;
+        c.globalAlpha = 0.85 * (1 - s);
+        c.beginPath();
+        c.moveTo(px, py);
+        c.lineTo(x, y);
+        c.stroke();
+        px = x;
+        py = y;
+      }
+      c.restore();
+    }
+    c.globalAlpha = 1;
+    halo(c, core, core * 2.6, 'rgba(255, 170, 90, 0.45)');
+    disc(c, 0, 0, core);
+    c.fillStyle = '#05020d';
+    c.fill();
+    c.strokeStyle = '#ffd9a0';
+    c.lineWidth = 2.2;
+    c.stroke();
+  }
+
+  function portalShape(c, t, open) {
+    const R = CONFIG.PORTAL_RADIUS;
+    if (!open) {
+      disc(c, 0, 0, R);
+      c.fillStyle = 'rgba(10, 8, 30, 0.6)';
+      c.fill();
+      c.setLineDash([7, 8]);
+      c.lineDashOffset = -t * 8;
+      c.strokeStyle = 'rgba(200, 190, 240, 0.6)';
+      c.lineWidth = 3;
+      c.stroke();
+      c.setLineDash([]);
+      c.strokeStyle = 'rgba(200, 190, 240, 0.3)';
+      c.lineWidth = 2;
+      c.beginPath();
+      for (let s = 0; s <= 1.0001; s += 0.04) {
+        const a = s * 9 + t * 0.4, rr = 3 + s * (R - 10);
+        const x = Math.cos(a) * rr, y = Math.sin(a) * rr;
+        if (s) c.lineTo(x, y); else c.moveTo(x, y);
+      }
+      c.stroke();
+      return;
+    }
+    halo(c, R * 0.5, R * 2.3, 'rgba(126, 240, 193, 0.35)');
+    c.lineCap = 'round';
+    c.lineWidth = 3.2;
+    for (let k = 0; k < 6; k++) {
+      c.save();
+      c.rotate(-t * 3 + (k * TAU) / 6);
+      c.beginPath();
+      for (let s = 0; s <= 1.0001; s += 0.05) {
+        const a = s * 3, rr = 3 + s * (R - 3);
+        const x = Math.cos(a) * rr, y = Math.sin(a) * rr;
+        if (s) c.lineTo(x, y); else c.moveTo(x, y);
+      }
+      c.strokeStyle = 'hsl(' + Math.round((k * 60 + t * 120) % 360) + ', 95%, 72%)';
+      c.stroke();
+      c.restore();
+    }
+    halo(c, 0, R * 0.7, 'rgba(255, 255, 255, 0.9)');
+    disc(c, 0, 0, R);
+    c.strokeStyle = '#7ef0c1';
+    c.lineWidth = 3;
+    c.stroke();
+  }
+
+  function sunShape(c, r, t, faceTurn) {
+    halo(c, r * 0.6, r + CONFIG.SUN_REACH + 20, 'rgba(255, 150, 50, 0.38)');
+    for (let i = 0; i < 22; i++) {
+      const a = (i / 22) * TAU + t * 0.25;
+      const len = r * (0.22 + 0.12 * Math.sin(t * 4 + i * 2.1));
+      const w = 0.15;
+      tri(c,
+        Math.cos(a - w) * r * 0.92, Math.sin(a - w) * r * 0.92,
+        Math.cos(a) * (r + len), Math.sin(a) * (r + len),
+        Math.cos(a + w) * r * 0.92, Math.sin(a + w) * r * 0.92,
+        i % 2 ? '#ff8a2a' : '#ffc23d');
+    }
+    const g = c.createRadialGradient(-r * 0.3, -r * 0.3, r * 0.1, 0, 0, r);
+    g.addColorStop(0, '#fffbe0');
+    g.addColorStop(0.5, '#ffd23f');
+    g.addColorStop(1, '#ff8a1f');
+    disc(c, 0, 0, r);
+    c.fillStyle = g;
+    c.fill();
+    // a grumpy face, so nobody wants to land on it
+    c.save();
+    c.rotate(faceTurn + Math.sin(t * 0.9) * 0.12);
+    c.strokeStyle = '#b4400f';
+    c.fillStyle = '#b4400f';
+    c.lineCap = 'round';
+    c.lineWidth = r * 0.06;
+    c.beginPath();
+    c.moveTo(-r * 0.45, -r * 0.32); c.lineTo(-r * 0.15, -r * 0.2);
+    c.moveTo(r * 0.45, -r * 0.32); c.lineTo(r * 0.15, -r * 0.2);
+    c.stroke();
+    disc(c, -r * 0.3, -r * 0.06, r * 0.07); c.fill();
+    disc(c, r * 0.3, -r * 0.06, r * 0.07); c.fill();
+    c.beginPath();
+    c.arc(0, r * 0.42, r * 0.22, 1.15 * Math.PI, 1.85 * Math.PI);
+    c.stroke();
+    c.restore();
+  }
+
+  // A planet: the pull zone, the ball, its turning surface and its shadow
+  function planetShape(c, r, kind, turn, decor) {
+    const k = KINDS[kind];
+    halo(c, r, r + CONFIG.PLANET_REACH, 'rgba(' + k.glow + ', 0.16)');
+    const g = c.createRadialGradient(-r * 0.35, -r * 0.4, r * 0.1, 0, 0, r);
+    g.addColorStop(0, k.light);
+    g.addColorStop(0.45, k.base);
+    g.addColorStop(1, k.dark);
+    disc(c, 0, 0, r);
+    c.fillStyle = g;
+    c.fill();
+
+    // The surface turns with the planet, so you can see the spin
+    c.save();
+    disc(c, 0, 0, r);
+    c.clip();
+    c.rotate(turn);
+    paintSurface(c, r, kind, k, decor);
+    c.restore();
+
+    // Night side
+    const sh = c.createLinearGradient(-r * 0.7, -r * 0.7, r, r);
+    sh.addColorStop(0.45, 'rgba(10, 6, 40, 0)');
+    sh.addColorStop(1, 'rgba(10, 6, 40, 0.5)');
+    disc(c, 0, 0, r);
+    c.fillStyle = sh;
+    c.fill();
+    c.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    c.lineWidth = 2;
+    c.stroke();
+  }
+
+  function paintSurface(c, r, kind, k, d) {
+    const at = (p) => [Math.cos(p.a) * p.d * r, Math.sin(p.a) * p.d * r];
+    if (kind === 'candy') {
+      c.fillStyle = 'rgba(255, 255, 255, 0.55)';
+      for (let j = -3; j <= 3; j++) {
+        c.save();
+        c.rotate(0.6);
+        c.fillRect(j * r * 0.42 - r * 0.1, -r, r * 0.2, r * 2);
+        c.restore();
+      }
+    } else if (kind === 'desert') {
+      c.strokeStyle = k.spot;
+      c.lineWidth = r * 0.09;
+      for (let j = -2; j <= 2; j++) {
+        c.beginPath();
+        for (let x = -r; x <= r; x += r / 10) {
+          const y = j * r * 0.36 + Math.sin(x / r * 5 + j) * r * 0.06;
+          if (x === -r) c.moveTo(x, y); else c.lineTo(x, y);
+        }
+        c.stroke();
+      }
+    } else if (kind === 'moon') {
+      for (const p of d.spots) {
+        const [x, y] = at(p);
+        disc(c, x, y, p.s * r);
+        c.fillStyle = k.spot;
+        c.fill();
+        c.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+        c.lineWidth = 1.5;
+        c.beginPath();
+        c.arc(x, y, p.s * r, 3.4, 5.2);
+        c.stroke();
+      }
+    } else {
+      // meadow, ice, ocean: patches of land, frost or green islands
+      c.fillStyle = k.spot;
+      for (const p of d.spots) {
+        const [x, y] = at(p);
+        oval(c, x, y, p.s * r * 1.3, p.s * r, p.a);
+        c.fill();
+      }
+    }
+    if (kind === 'ice') {
+      c.strokeStyle = 'rgba(40, 90, 160, 0.35)';
+      c.lineWidth = 1.5;
+      c.beginPath();
+      for (const p of d.dots) {
+        const [x, y] = at(p);
+        c.moveTo(x, y);
+        c.lineTo(x + Math.cos(p.a * 3) * r * 0.25, y + Math.sin(p.a * 3) * r * 0.25);
+      }
+      c.stroke();
+    } else if (kind !== 'candy') {
+      c.fillStyle = k.dot;
+      for (const p of d.dots) {
+        const [x, y] = at(p);
+        if (kind === 'ocean') oval(c, x, y, p.s * r * 3, p.s * r * 0.9, 0.3);
+        else disc(c, x, y, p.s * r);
+        c.fill();
+      }
+    }
+  }
+
+  // Each planet and rock gets its own fixed look, made once and remembered
+  const looks = new WeakMap();
+  function lookOf(thing, seed, make) {
+    let l = looks.get(thing);
+    if (!l) { l = make(seeded(seed)); looks.set(thing, l); }
+    return l;
+  }
+  const planetLook = (p, i) => lookOf(p, 9001 + i * 7919 + Math.round(p.r * 13), (rnd) => ({
+    tilt: rnd() * TAU,
+    spots: Array.from({ length: 5 }, () => ({ a: rnd() * TAU, d: rnd() * 0.75, s: 0.14 + rnd() * 0.2 })),
+    dots: Array.from({ length: 7 }, () => ({ a: rnd() * TAU, d: 0.15 + rnd() * 0.75, s: 0.03 + rnd() * 0.03 }))
+  }));
+  const rockLook = (r, i) => lookOf(r, 444 + i * 977, (rnd) => ({
+    verts: Array.from({ length: 9 }, () => 0.8 + rnd() * 0.28),
+    spin: (rnd() - 0.5) * 2
+  }));
+
+  /* ========================================================================
+   * 7. SPARKLES, PUFFS AND FLOATING POINTS (looks only; not part of the rules)
+   * ====================================================================== */
+  const sparks = [];   // in galaxy units
+  const floats = [];   // "+100" labels
+  const trail = [];    // Mochi's sparkly trail while flying
+
+  function burst(x, y, n, colors, speed, size, life) {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * TAU, v = speed * (0.35 + Math.random() * 0.65);
+      sparks.push({
+        x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+        life: life * (0.6 + Math.random() * 0.4), max: life,
+        size: size * (0.6 + Math.random() * 0.6),
+        color: colors[i % colors.length]
+      });
+    }
+  }
+
+  function floatText(x, y, text, color) {
+    floats.push({ x, y, text, color, life: 1 });
+  }
+
+  function updateEffects(dt) {
+    for (let i = sparks.length - 1; i >= 0; i--) {
+      const p = sparks[i];
+      p.life -= dt;
+      if (p.life <= 0) { sparks.splice(i, 1); continue; }
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= 0.96;
+      p.vy *= 0.96;
+    }
+    for (let i = floats.length - 1; i >= 0; i--) {
+      floats[i].life -= dt * 1.1;
+      if (floats[i].life <= 0) floats.splice(i, 1);
+    }
+    const w = game.world;
+    if (w && w.cat.state === 'flying') {
+      trail.push(w.cat.x, w.cat.y);
+      if (trail.length > 40) trail.splice(0, 2);
+    } else if (trail.length) {
+      trail.splice(0, 4);
+    }
+    if (game.shake > 0) game.shake = Math.max(0, game.shake - dt * 40);
+  }
+
+  function clearEffects() {
+    sparks.length = 0;
+    floats.length = 0;
+    trail.length = 0;
+    game.shake = 0;
+  }
+
+  /* ========================================================================
+   * 8. DRAWING THE SKY AND THE GALAXY
+   * ====================================================================== */
+  let stars = [];
+  function makeStars() {
+    const n = Math.round(clamp((view.w * view.h) / 2600, 80, 700));
+    const rnd = seeded(20240611);
+    stars = Array.from({ length: n }, () => ({
+      x: rnd() * view.w,
+      y: rnd() * view.h,
+      r: rnd() < 0.08 ? 1.5 : 0.4 + rnd() * 0.9,
+      phase: rnd() * TAU,
+      speed: 0.6 + rnd() * 2,
+      depth: 0.2 + rnd() * 0.8
+    }));
+  }
+
+  // The Cat constellation: a cat's head drawn in stars, high in the sky
+  const CONSTELLATION = [[-1, 0.25], [-0.85, -0.8], [-0.35, -0.38], [0.35, -0.38], [0.85, -0.8], [1, 0.25], [0.55, 0.85], [-0.55, 0.85]];
+
+  function drawSky(w, clock) {
+    const g = ctx.createLinearGradient(0, 0, 0, view.h);
+    g.addColorStop(0, '#0a0820');
+    g.addColorStop(1, '#170f3c');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, view.w, view.h);
+
+    const theme = (w && w.level.theme) || LEVELS[0].theme;
+    const big = Math.max(view.w, view.h);
+    nebula(view.w * 0.2, view.h * 0.28, big * 0.55, theme[0]);
+    nebula(view.w * 0.86, view.h * 0.82, big * 0.5, theme[1]);
+
+    // Stars drift a little against Mochi's movement, for depth
+    const still = reducedMotion.matches;
+    const px = w && !still ? (w.cat.x - W / 2) * view.s * 0.04 : 0;
+    const py = w && !still ? (w.cat.y - H / 2) * view.s * 0.04 : 0;
+    ctx.fillStyle = '#fff4e6';
+    for (const s of stars) {
+      const tw = still ? 0.8 : 0.55 + 0.45 * Math.sin(clock * s.speed + s.phase);
+      ctx.globalAlpha = tw * (0.35 + s.depth * 0.65);
+      const x = (((s.x - px * s.depth) % view.w) + view.w) % view.w;
+      const y = (((s.y - py * s.depth) % view.h) + view.h) % view.h;
+      ctx.fillRect(x, y, s.r, s.r);
+    }
+    ctx.globalAlpha = 1;
+
+    const size = Math.min(view.w, view.h) * 0.11;
+    const cx = view.w * 0.84, cy = view.h * 0.2;
+    ctx.strokeStyle = 'rgba(255, 244, 230, 0.07)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    CONSTELLATION.forEach(([x, y], i) => (i ? ctx.lineTo : ctx.moveTo).call(ctx, cx + x * size, cy + y * size));
+    ctx.closePath();
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255, 244, 230, 0.38)';
+    for (const [x, y] of CONSTELLATION.concat([[-0.38, 0.15], [0.38, 0.15]])) {
+      ctx.fillRect(cx + x * size - 1, cy + y * size - 1, 2, 2);
+    }
+  }
+
+  function nebula(x, y, r, color) {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, hexToRgba(color, 0.5));
+    g.addColorStop(1, hexToRgba(color, 0));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, view.w, view.h);
+  }
+
+  function drawWorld(w) {
+    const t = w.t;
+    ctx.save();
+    let sx = 0, sy = 0;
+    if (game.shake > 0 && !reducedMotion.matches) {
+      sx = (Math.random() - 0.5) * game.shake;
+      sy = (Math.random() - 0.5) * game.shake;
+    }
+    ctx.translate(view.ox + sx, view.oy + sy);
+    ctx.scale(view.s, view.s);
+    if (view.turned) {
+      ctx.translate(0, W);
+      ctx.rotate(-Math.PI / 2);
+    }
+
+    // The edge of space: drift past this dotted line and Mochi is lost
+    ctx.setLineDash([10 / view.s, 12 / view.s]);
+    ctx.lineWidth = 1.5 / view.s;
+    ctx.strokeStyle = 'rgba(189, 179, 224, 0.28)';
+    roundRect(ctx, -EDGE, -EDGE, W + EDGE * 2, H + EDGE * 2, 30);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    for (const h of w.holes) draw(h.x, h.y, 0, () => holeShape(ctx, t, h.reach));
+    w.planets.forEach((p, i) => {
+      if (p.kind === 'sun') draw(p.x, p.y, 0, () => sunShape(ctx, p.r, t, upright()));
+      else draw(p.x, p.y, 0, () => planetShape(ctx, p.r, p.kind, p.spin * t + planetLook(p, i).tilt, planetLook(p, i)));
+    });
+    draw(w.portal.x, w.portal.y, 0, () => portalShape(ctx, t, w.portal.open));
+    w.fish.forEach((f, i) => {
+      if (!f.got) draw(f.x, f.y + Math.sin(t * 2.4 + i) * 3, upright() + Math.sin(t * 1.7 + i) * 0.2, () => fishShape(ctx, t + i));
+    });
+    w.yarn.forEach((y, i) => { if (!y.got) draw(y.x, y.y, upright() + Math.sin(t * 1.3 + i) * 0.3, () => yarnShape(ctx, t)); });
+    w.rocks.forEach((r, i) => draw(r.x, r.y, 0, () => rockShape(ctx, r.r, rockLook(r, i).verts, t * rockLook(r, i).spin)));
+    w.dogs.forEach((d, i) => draw(d.x, d.y, upright() + Math.sin(t * 2 + i) * 0.12, () => dogShape(ctx, t + i)));
+
+    drawGuide(w);
+    drawTrail();
+    drawMochi(w);
+
+    for (const p of sparks) {
+      ctx.globalAlpha = clamp(p.life / p.max, 0, 1);
+      ctx.fillStyle = p.color;
+      disc(ctx, p.x, p.y, p.size);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    drawLabels(w);
+  }
+
+  // Draw a sprite at (x, y) turned by angle a
+  function draw(x, y, a, paint) {
+    ctx.save();
+    ctx.translate(x, y);
+    if (a) ctx.rotate(a);
+    paint();
+    ctx.restore();
+  }
+
+  function drawGuide(w) {
+    if (game.mode !== 'play' || w.cat.state !== 'planet') return;
+    const g = G.predict(w, CONFIG.GUIDE_TIME);
+    const n = g.path.length / 2;
+    for (let i = 0; i < n; i++) {
+      ctx.globalAlpha = 0.85 * (1 - i / (n + 2));
+      ctx.fillStyle = g.danger && i > n - 4 ? '#ff7d8a' : '#fff4e6';
+      disc(ctx, g.path[i * 2], g.path[i * 2 + 1], 3.4);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawTrail() {
+    const n = trail.length / 2;
+    for (let i = 0; i < n; i++) {
+      const k = (i + 1) / n;
+      ctx.globalAlpha = k * 0.6;
+      ctx.fillStyle = i % 2 ? '#ffa646' : '#ff8fc7';
+      disc(ctx, trail[i * 2], trail[i * 2 + 1], 1.5 + k * 4);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Mochi is drawn a little larger than Mochi's touching circle, growing from
+  // the feet so they stay on the ground
+  const MOCHI_ART = 1.3;
+  function bigger(k) {
+    ctx.translate(0, CONFIG.CAT_LIFT);
+    ctx.scale(MOCHI_ART * k, MOCHI_ART * k);
+    ctx.translate(0, -CONFIG.CAT_LIFT);
+  }
+
+  let facing = 1;
+  function drawMochi(w) {
+    const c = w.cat, t = w.t;
+    if (c.state === 'dead') {
+      // a little ghost of Mochi floats up, wearing a halo
+      const k = 1 - c.timer / CONFIG.RESPAWN_DELAY;
+      const upA = view.turned ? 0 : -Math.PI / 2;
+      ctx.globalAlpha = 0.55 * (1 - k);
+      draw(c.x + Math.cos(upA) * k * 60, c.y + Math.sin(upA) * k * 60, upA + Math.PI / 2, () => {
+        bigger(1);
+        catShape(ctx, t, 'stand');
+        ctx.strokeStyle = '#ffd23f';
+        ctx.lineWidth = 2;
+        oval(ctx, 2, -26, 8, 2.5);
+        ctx.stroke();
+      });
+      ctx.globalAlpha = 1;
+      return;
+    }
+    let up, pose = 'walk', scale = 1;
+    if (c.state === 'planet') {
+      up = c.angle;
+      facing = w.planets[c.planet].spin >= 0 ? 1 : -1;
+    } else if (c.state === 'flying') {
+      up = Math.atan2(c.vy, c.vx);
+      pose = 'fly';
+    } else {
+      // warp: spin and shrink into the wormhole
+      const k = 1 - Math.max(0, c.timer) / CONFIG.WARP_TIME;
+      up = k * TAU * 2.5;
+      scale = 1 - k * 0.95;
+      pose = 'fly';
+    }
+    if (c.shield > 0 && Math.floor(c.shield * 12) % 2 === 0) ctx.globalAlpha = 0.35;
+    draw(c.x, c.y, up + Math.PI / 2, () => {
+      bigger(scale);
+      if (facing < 0) ctx.scale(-1, 1);
+      catShape(ctx, t, pose);
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  // Text is drawn upright on the screen, after the galaxy
+  const BODY_FONT = '"Zen Maru Gothic", "Hiragino Maru Gothic ProN", ui-rounded, "Segoe UI", system-ui, sans-serif';
+  function drawLabels(w) {
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    if (!w.portal.open && game.mode !== 'menu') {
+      const p = toScreen(w.portal.x, w.portal.y);
+      const size = clamp(13 * Math.sqrt(view.s * 1.6), 10, 15);
+      const y = p.y + CONFIG.PORTAL_RADIUS * view.s + size;
+      const text = (w.fish.length - w.fishGot) + ' fish to go';
+      ctx.font = '700 ' + size + 'px ' + BODY_FONT;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(8, 6, 26, 0.75)';
+      ctx.strokeText(text, p.x, y);
+      ctx.fillStyle = 'rgba(214, 206, 248, 0.95)';
+      ctx.fillText(text, p.x, y);
+    }
+    for (const f of floats) {
+      const p = toScreen(f.x, f.y);
+      ctx.globalAlpha = clamp(f.life * 1.5, 0, 1);
+      ctx.font = '400 ' + clamp(22 * Math.sqrt(view.s * 1.4), 14, 24) + 'px "Mochiy Pop One", "Arial Rounded MT Bold", sans-serif';
+      ctx.fillStyle = 'rgba(8, 6, 26, 0.6)';
+      ctx.fillText(f.text, p.x, p.y - (1 - f.life) * 40 + 2);
+      ctx.fillStyle = f.color;
+      ctx.fillText(f.text, p.x, p.y - (1 - f.life) * 40);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /* ========================================================================
+   * 9. ICONS: the same sprites, drawn into the small canvases in the page
+   * ====================================================================== */
+  const ICONS = {
+    cat: { size: 50, paint: (c) => { c.translate(0, 3); catShape(c, 1, 'stand'); } },
+    fish: { size: 38, paint: (c) => fishShape(c, 0.6) },
+    paw: { size: 16, paint: (c) => pawShape(c) },
+    star: { size: 16, paint: (c) => {
+      c.fillStyle = FUR;
+      c.beginPath();
+      for (let i = 0; i < 10; i++) {
+        const r = i % 2 ? 3.2 : 7.5, a = -Math.PI / 2 + (i * Math.PI) / 5;
+        c.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      c.closePath();
+      c.fill();
+    } },
+    clock: { size: 16, paint: (c) => {
+      c.strokeStyle = '#bdb3e0';
+      c.lineWidth = 1.8;
+      c.lineCap = 'round';
+      disc(c, 0, 0, 6.5);
+      c.stroke();
+      c.beginPath();
+      c.moveTo(0, 0); c.lineTo(0, -4);
+      c.moveTo(0, 0); c.lineTo(3, 1.5);
+      c.stroke();
+    } },
+    yarn: { size: 46, paint: (c) => yarnShape(c, 0.5) },
+    rock: { size: 44, paint: (c) => rockShape(c, 18, [1, 0.86, 1.04, 0.92, 1.06, 0.84, 1, 0.9, 1.02], 0.3) },
+    dog: { size: 60, paint: (c) => { c.translate(0, 2); dogShape(c, 0.2); } },
+    sun: { size: 100, paint: (c) => sunShape(c, 34, 0.5, 0) },
+    hole: { size: 110, paint: (c) => holeShape(c, 0.4, 0) },
+    portal: { size: 86, paint: (c) => portalShape(c, 0.7, true) },
+    planet: { size: 92, paint: (c) => { planetShape(c, 28, 'candy', 0.4, null); c.rotate(-0.7); c.translate(0, -28 - CONFIG.CAT_LIFT); catShape(c, 1, 'stand'); } },
+    drift: { size: 92, paint: (c) => {
+      c.strokeStyle = 'rgba(255, 244, 230, 0.5)';
+      c.setLineDash([4, 5]);
+      c.lineWidth = 2;
+      c.beginPath(); c.moveTo(-40, 26); c.lineTo(40, -26); c.stroke();
+      c.setLineDash([]);
+      planetShape(c, 22, 'ice', 0.3, planetLook(ICONS, 1));
+    } }
+  };
+
+  function paintIcon(el, name) {
+    name = name || el.dataset.icon;
+    const icon = ICONS[name];
+    if (!icon) return;
+    if (!el.dataset.w) { el.dataset.w = el.getAttribute('width'); el.dataset.h = el.getAttribute('height'); }
+    const w = +el.dataset.w, h = +el.dataset.h, dpr = Math.min(window.devicePixelRatio || 1, 2);
+    el.style.width = w + 'px';
+    el.style.height = h + 'px';
+    el.width = Math.round(w * dpr);
+    el.height = Math.round(h * dpr);
+    const c = el.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, w, h);
+    c.translate(w / 2, h / 2);
+    const k = Math.min(w, h) / icon.size;
+    c.scale(k, k);
+    icon.paint(c);
+  }
+
+  /* ========================================================================
+   * 10. GAME FLOW: screens, levels, lives and score
+   * ====================================================================== */
+  const game = {
+    mode: 'menu',       // menu | intro | play | paused | clear | over | win
+    level: 0,
+    lives: CONFIG.LIVES,
+    score: 0,           // banked score from finished levels
+    livesAtStart: CONFIG.LIVES,
+    scoreAtStart: 0,
+    world: null,
+    jump: false,        // a leap waiting for the next step
+    acc: 0,             // time not yet turned into steps
+    clock: 0,
+    shake: 0,
+    lastResult: null,
+    helpReturn: 'title'
+  };
+
+  const OUCH = {
+    lost: 'Lost in space!',
+    rock: 'Bonk! A moon rock!',
+    dog: 'Woof! A space dog!',
+    sun: 'Too hot!',
+    hole: 'Into the black hole!'
+  };
+
+  // Show one screen (or none, while playing). Screens that pop up mid-game
+  // ignore input for a moment, so a leap held down can't click a button.
+  let armTimer = 0;
+  function show(name, guard) {
+    clearTimeout(armTimer);
+    for (const key in screens) screens[key].hidden = key !== name;
+    const el = screens[name];
+    if (!el) return;
+    el.scrollTop = 0;
+    const focus = () => {
+      const target = el.querySelector('[data-primary]:not(:disabled)') || el.querySelector('button:not(:disabled)');
+      if (target) target.focus({ preventScroll: true });
+    };
+    if (guard) {
+      el.inert = true;
+      armTimer = setTimeout(() => { el.inert = false; focus(); }, 450);
+    } else {
+      el.inert = false;
+      focus();
+    }
+  }
+
+  function setHud(on) {
+    hudEl.classList.toggle('is-off', !on);
+  }
+
+  function toTitle() {
+    game.mode = 'menu';
+    game.world = G.createWorld(0);
+    clearEffects();
+    setHud(false);
+    refreshTitle();
+    show('title');
+  }
+
+  function refreshTitle() {
+    const stars = totalStars(), all = LEVELS.length * 3;
+    $('title-stars').textContent = stars + ' of ' + all + ' stars';
+    $('title-best').textContent = 'Best score ' + fmt(save.best);
+    const next = firstUnfinished();
+    $('btn-play').textContent = next === 0 && stars === 0 ? 'Play' : 'Play level ' + (next + 1);
+  }
+
+  // The first level without stars that is open, or level 1 when all are done
+  function firstUnfinished() {
+    for (let i = 0; i < save.unlocked; i++) if (!save.stars[i]) return i;
+    return 0;
+  }
+
+  function starsHtml(n) {
+    let s = '';
+    for (let i = 0; i < 3; i++) s += '<span class="' + (i < n ? 'on' : 'off') + '">&#9733;</span>';
+    return '<span class="stars" role="img" aria-label="' + n + ' of 3 stars">' + s + '</span>';
+  }
+
+  function openLevels() {
+    const grid = $('level-grid');
+    grid.textContent = '';
+    LEVELS.forEach((L, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'level-card';
+      b.disabled = i >= save.unlocked;
+      b.innerHTML = '<span class="num">' + (i + 1) + '</span><span class="name">' + L.name + '</span>' +
+        (b.disabled ? '<span class="locked">Finish level ' + i + ' first</span>' : starsHtml(save.stars[i]));
+      b.addEventListener('click', () => startFresh(i));
+      grid.appendChild(b);
+    });
+    $('levels-stars').textContent = totalStars() + ' of ' + LEVELS.length * 3 + ' stars';
+    show('levels');
+  }
+
+  function openHelp(from) {
+    game.helpReturn = from;
+    show('help');
+  }
+
+  // A new run from a level: nine lives, score from zero
+  function startFresh(index) {
+    game.lives = CONFIG.LIVES;
+    game.score = 0;
+    openLevel(index);
+  }
+
+  // Show the intro card for a level, with the level waiting behind it
+  function openLevel(index) {
+    const L = LEVELS[index];
+    game.level = index;
+    game.livesAtStart = game.lives;
+    game.scoreAtStart = game.score;
+    game.world = G.createWorld(index, game.lives);
+    game.mode = 'intro';
+    game.acc = 0;
+    clearEffects();
+    $('intro-num').textContent = 'Level ' + (index + 1) + ' of ' + LEVELS.length;
+    $('intro-name').textContent = L.name;
+    $('intro-goal').textContent = 'Catch all ' + L.fish.length + ' golden fish, then fly into the wormhole.';
+    $('intro-tip').innerHTML = L.tip;
+    $('intro-par').textContent = L.par + ' s';
+    $('intro-lives').textContent = game.lives;
+    $('intro-best').innerHTML = starsHtml(save.stars[index]);
+    paintIcon($('intro-icon'), L.icon);
+    $('hud-num').textContent = 'Level ' + (index + 1);
+    $('hud-name').textContent = L.name;
+    setHud(true);
+    show('intro');
+  }
+
+  function beginPlay() {
+    game.mode = 'play';
+    game.acc = 0;
+    game.jump = false;
+    show(null);
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    sound.play('meow');
+    if (game.level === 0 && game.world.t === 0) toast('Tap, click or press Space to leap');
+  }
+
+  function pause() {
+    if (game.mode !== 'play') return;
+    game.mode = 'paused';
+    const w = game.world;
+    $('pause-info').textContent = 'Level ' + (game.level + 1) + ' · ' + w.fishGot + ' of ' + w.fish.length + ' fish · ' + w.lives + ' lives';
+    show('pause');
+  }
+
+  function resume() {
+    if (game.mode !== 'paused') return;
+    game.mode = 'play';
+    game.acc = 0;
+    game.jump = false;
+    show(null);
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  }
+
+  // Start the level again with the lives and score it began with
+  function restart() {
+    game.lives = game.livesAtStart;
+    game.score = game.scoreAtStart;
+    openLevel(game.level);
+    beginPlay();
+  }
+
+  function finishLevel() {
+    const w = game.world;
+    const r = G.scoreLevel(w);
+    game.lastResult = r;
+    game.score += r.total;
+    game.lives = w.lives;
+    save.stars[game.level] = Math.max(save.stars[game.level], r.stars);
+    save.unlocked = Math.max(save.unlocked, Math.min(LEVELS.length, game.level + 2));
+    save.best = Math.max(save.best, game.score);
+    writeSave();
+
+    const last = game.level === LEVELS.length - 1;
+    $('clear-num').textContent = 'Level ' + (game.level + 1) + ' complete';
+    $('clear-title').textContent = r.stars === 3 ? 'Purr-fect!' : r.stars === 2 ? 'Nice landing!' : 'Made it!';
+    const starEls = $('clear-stars').children;
+    for (let i = 0; i < 3; i++) starEls[i].className = i < r.stars ? 'on' : '';
+    $('clear-stars').setAttribute('aria-label', r.stars + ' of 3 stars');
+    const notes = $('clear-notes').children;
+    notes[0].className = 'on';
+    notes[1].className = r.clean ? 'on' : '';
+    notes[2].className = r.underPar ? 'on' : '';
+    notes[2].textContent = 'Under ' + w.level.par + ' s';
+    const rows = [
+      ['Fish', r.fish],
+      ['Yarn', r.yarn],
+      ['Level finished', r.clear],
+      ['Time ' + r.time.toFixed(1) + ' s (par ' + w.level.par + ' s)', r.timeBonus],
+      ['No lives lost', r.cleanRun]
+    ];
+    $('clear-tally').innerHTML = rows.map(([k, v]) => '<dt>' + k + '</dt><dd>' + fmt(v) + '</dd>').join('') +
+      '<dt class="total">Level total</dt><dd class="total">' + fmt(r.total) + '</dd>' +
+      '<dt>Score so far</dt><dd>' + fmt(game.score) + '</dd>';
+    $('btn-next').textContent = last ? 'See the ending' : 'Next level';
+    game.mode = 'clear';
+    sound.play('clear');
+    setTimeout(() => sound.play('meow'), 500);
+    show('clear', true);
+  }
+
+  function nextLevel() {
+    if (game.level === LEVELS.length - 1) return showWin();
+    openLevel(game.level + 1);
+  }
+
+  function replay() {
+    game.lives = game.livesAtStart;
+    game.score = game.scoreAtStart;
+    openLevel(game.level);
+  }
+
+  function gameOver() {
+    game.mode = 'over';
+    $('over-num').textContent = 'Level ' + (game.level + 1) + ' · ' + LEVELS[game.level].name;
+    sound.play('over');
+    show('over', true);
+  }
+
+  function retry() {
+    game.lives = CONFIG.LIVES;
+    game.score = game.scoreAtStart;
+    openLevel(game.level);
+  }
+
+  function showWin() {
+    game.mode = 'win';
+    setHud(false);
+    $('win-score').textContent = fmt(game.score);
+    $('win-stars').textContent = totalStars() + '/' + LEVELS.length * 3;
+    $('win-best').textContent = fmt(save.best);
+    show('win');
+  }
+
+  let toastTimer = 0;
+  function toast(text, kind, small) {
+    toastEl.className = 'toast';
+    toastEl.textContent = text;
+    if (small) {
+      const s = document.createElement('small');
+      s.textContent = small;
+      toastEl.appendChild(s);
+    }
+    void toastEl.offsetWidth;            // restart the animation
+    toastEl.className = 'toast show' + (kind ? ' ' + kind : '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toastEl.className = 'toast'; }, 2100);
+  }
+
+  function bump(id, cls) {
+    const el = $(id);
+    el.classList.remove(cls);
+    void el.offsetWidth;
+    el.classList.add(cls);
+  }
+
+  // React to what happened in a step of the rules
+  function onEvent(e) {
+    const playing = game.mode === 'play';
+    switch (e.type) {
+      case 'jump':
+        burst(e.x, e.y, 8, ['#fff4e6', '#ffa646'], 90, 3, 0.4);
+        if (playing) sound.play('jump');
+        break;
+      case 'land':
+        burst(e.x, e.y, 6, ['#fff4e6', '#bdb3e0'], 60, 2.5, 0.35);
+        if (playing) sound.play('land');
+        break;
+      case 'fish':
+        burst(e.x, e.y, 14, ['#ffd23f', '#fff3b0', '#ffa646'], 150, 3.2, 0.6);
+        floatText(e.x, e.y, '+' + e.points, '#ffd23f');
+        if (playing) { sound.play('fish'); bump('stat-fish', 'bump'); }
+        break;
+      case 'yarn':
+        burst(e.x, e.y, 16, ['#ff8fc7', '#ffd3ec', '#a58bff'], 160, 3.2, 0.7);
+        floatText(e.x, e.y, '+' + e.points, '#ff8fc7');
+        if (playing) sound.play('yarn');
+        break;
+      case 'open':
+        burst(e.x, e.y, 30, ['#7ef0c1', '#fff4e6', '#a58bff', '#ff8fc7'], 220, 3.5, 0.9);
+        if (playing) { sound.play('open'); toast('Wormhole open!', 'good', 'Fly into it to finish'); }
+        break;
+      case 'die':
+        burst(e.x, e.y, 22, ['#fff4e6', '#ffa646', '#ff7d8a'], 200, 3.5, 0.8);
+        if (playing) {
+          game.shake = 14;
+          sound.play('die');
+          bump('stat-lives', 'hurt');
+          const w = game.world;
+          toast(OUCH[e.cause] || 'Ouch!', 'bad', w.lives === 0 ? 'That was the last life' : w.lives + (w.lives === 1 ? ' life left' : ' lives left'));
+        }
+        break;
+      case 'warp':
+        if (playing) sound.play('warp');
+        break;
+      case 'complete':
+        if (playing) finishLevel();
+        break;
+      case 'gameover':
+        if (playing) gameOver();
+        break;
+    }
+  }
+
+  // On the title screen Mochi plays alone: leap whenever the guide line
+  // ends on another planet (and now and then wait, to look less like a robot)
+  function demoWantsJump(w) {
+    const c = w.cat;
+    if (c.state !== 'planet' || c.pause > 0 || Math.random() > 0.05) return false;
+    const g = G.predict(w, 2.5);
+    return g.planet >= 0 && g.planet !== c.planet && !g.danger;
+  }
+
+  /* ========================================================================
+   * 11. HUD
+   * ====================================================================== */
+  const hudText = {};
+  function setText(id, text) {
+    if (hudText[id] !== text) { hudText[id] = text; $(id).textContent = text; }
+  }
+
+  function updateHud() {
+    const w = game.world;
+    if (!w || game.mode === 'menu') return;
+    setText('hud-fish', w.fishGot + '/' + w.fish.length);
+    setText('hud-lives', String(w.lives));
+    setText('hud-score', fmt(game.score + w.points));
+    setText('hud-time', (w.finishTime || w.t).toFixed(1));
+  }
+
+  function updateSoundButton() {
+    const b = $('btn-sound');
+    b.setAttribute('aria-pressed', String(!sound.muted));
+    b.setAttribute('aria-label', sound.muted ? 'Sound is off' : 'Sound is on');
+  }
+
+  function toggleSound() {
+    sound.muted = !sound.muted;
+    save.muted = sound.muted;
+    writeSave();
+    updateSoundButton();
+    sound.play('click');
+  }
+
+  /* ========================================================================
+   * 12. INPUT: keyboard, mouse, touch and the page's buttons
+   * ====================================================================== */
+  const LEAP_KEYS = new Set([' ', 'Spacebar', 'ArrowUp', 'w', 'W', 'Enter']);
+
+  document.addEventListener('keydown', (e) => {
+    sound.wake();
+    const key = e.key;
+    if (key === 'm' || key === 'M') { toggleSound(); return; }
+    if (game.mode === 'play') {
+      if (LEAP_KEYS.has(key)) {
+        e.preventDefault();
+        if (!e.repeat) game.jump = true;
+      } else if (key === 'p' || key === 'P' || key === 'Escape') {
+        e.preventDefault();
+        pause();
+      } else if (key === 'r' || key === 'R') {
+        restart();
+      }
+    } else if (game.mode === 'paused') {
+      if (key === 'p' || key === 'P' || key === 'Escape') { e.preventDefault(); resume(); }
+    } else if (game.mode === 'intro') {
+      const onButton = e.target && e.target.closest && e.target.closest('button');
+      if ((key === ' ' || key === 'Enter') && !onButton) { e.preventDefault(); beginPlay(); }
+    }
+  });
+
+  // A click or tap anywhere on the game (not on a button or a menu) is a leap
+  stage.addEventListener('pointerdown', (e) => {
+    sound.wake();
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (e.target.closest('button, .screen')) return;
+    if (game.mode === 'play') {
+      e.preventDefault();
+      game.jump = true;
+    }
+  });
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  // Pause when the page is hidden or loses focus
+  document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
+  window.addEventListener('blur', pause);
+
+  // Buttons
+  stage.addEventListener('click', (e) => {
+    const go = e.target.closest('[data-go]');
+    if (!go) return;
+    sound.play('click');
+    const to = go.dataset.go;
+    if (to === 'title') toTitle();
+    else if (to === 'levels') openLevels();
+    else if (to === 'help') openHelp(game.mode === 'paused' ? 'pause' : 'title');
+  });
+  $('btn-play').addEventListener('click', () => startFresh(firstUnfinished()));
+  $('btn-help-back').addEventListener('click', () => show(game.helpReturn));
+  $('btn-go').addEventListener('click', beginPlay);
+  $('btn-resume').addEventListener('click', resume);
+  $('btn-restart').addEventListener('click', restart);
+  $('btn-next').addEventListener('click', nextLevel);
+  $('btn-replay').addEventListener('click', replay);
+  $('btn-retry').addEventListener('click', retry);
+  $('btn-again').addEventListener('click', () => startFresh(0));
+  $('btn-pause').addEventListener('click', (e) => {
+    if (game.mode === 'play') pause(); else resume();
+    e.currentTarget.blur();
+  });
+  $('btn-sound').addEventListener('click', (e) => {
+    sound.wake();
+    toggleSound();
+    e.currentTarget.blur();
+  });
+
+  /* ========================================================================
+   * 13. THE MAIN LOOP
+   *     The rules always move in fixed steps of CONFIG.STEP, however fast
+   *     the screen refreshes, so the game plays the same everywhere.
+   * ====================================================================== */
+  let last = performance.now();
+  function frame(now) {
+    const dt = clamp((now - last) / 1000, 0, 0.05);
+    last = now;
+    game.clock += dt;
+
+    const w = game.world;
+    if (w && (game.mode === 'play' || game.mode === 'menu')) {
+      game.acc += dt;
+      while (game.acc >= CONFIG.STEP) {
+        game.acc -= CONFIG.STEP;
+        const demo = game.mode === 'menu';
+        let jump = false;
+        if (demo) jump = demoWantsJump(w);
+        else { jump = game.jump; game.jump = false; }
+        G.step(w, jump);
+        for (const e of w.events) onEvent(e);
+        if (demo && (w.done || w.over)) { game.world = G.createWorld(0); break; }
+        if (game.mode !== 'play' && game.mode !== 'menu') break;   // a screen opened
+      }
+    }
+
+    updateEffects(dt);
+    ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+    drawSky(game.world, game.clock);
+    if (game.world) drawWorld(game.world);
+    updateHud();
+    requestAnimationFrame(frame);
+  }
+
+  /* ========================================================================
+   * 14. START UP
+   * ====================================================================== */
+  layout();
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(layout);
+    ro.observe(stage);
+    ro.observe(hudEl);
+  } else {
+    window.addEventListener('resize', layout);
+  }
+  document.querySelectorAll('canvas[data-icon]').forEach((el) => paintIcon(el));
+  updateSoundButton();
+  toTitle();
+  requestAnimationFrame(frame);
+
+  // For the browser checks in test/: read-only access to the running game
+  window.__catGalaxy = { game, view };
+})();
+</script>
+</body>
+</html>

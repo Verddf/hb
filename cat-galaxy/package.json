@@ -1,0 +1,14 @@
+{
+  "name": "cat-galaxy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A one-button space game in a single HTML file: plain JavaScript on a canvas, no libraries, no image or sound files.",
+  "scripts": {
+    "test": "node test/levels.js",
+    "test:browser": "node test/browser.js",
+    "screenshots": "node test/browser.js --shots"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.0"
+  }
+}
